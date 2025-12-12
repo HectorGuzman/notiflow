@@ -5,6 +5,7 @@ import { Button, Input, Card } from '@/components/ui';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store';
 import { FiMail, FiLock } from 'react-icons/fi';
+import { apiClient } from '@/lib/api-client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,22 +21,21 @@ export default function LoginPage() {
     setError('');
 
     try {
-      // Simulación de login - reemplazar con llamada real a API
-      if (email && password) {
-        setUser({
-          id: '1',
-          name: 'Profesor Demo',
-          email,
-          role: 'teacher',
-          schoolId: 'school-1',
-          schoolName: 'Colegio Demo',
-        });
-        router.push('/dashboard');
-      } else {
-        setError('Por favor completa todos los campos');
-      }
+      const response = await apiClient.login(email, password);
+      const { token, user } = response.data;
+      localStorage.setItem('authToken', token);
+      setUser(user);
+      router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión');
+      const status = err?.response?.status;
+      const msg =
+        status === 401 || status === 403
+          ? 'Correo o contraseña inválidos'
+          : err?.response?.data?.message ||
+            err?.response?.data?.error ||
+            err?.message ||
+            'Error al iniciar sesión';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -95,10 +95,14 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-sm text-gray-600 text-center">
-              Demo: Usa cualquier correo y contraseña para entrar
-            </p>
+          <div className="mt-6 pt-4">
+            <button
+              type="button"
+              className="text-sm text-primary hover:text-green-700 transition-colors w-full text-center"
+              onClick={() => router.push('/forgot-password')}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
           </div>
         </Card>
 

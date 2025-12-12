@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: notiflow-backend
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+  cloud:
+    gcp:
+      project-id: ${FIRESTORE_PROJECT_ID:notiflow-480919}
+      firestore:
+        project-id: ${FIRESTORE_PROJECT_ID:notiflow-480919}
+        emulator:
+          enabled: ${FIRESTORE_EMULATOR_ENABLED:false}
+          host: ${FIRESTORE_EMULATOR_HOST:localhost:8080}
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-dev-secret}
+    expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,https://hectorguzman.github.io}
+  admin:
+    email: ${APP_ADMIN_EMAIL:}
+    password: ${APP_ADMIN_PASSWORD:}
+    school-id: ${APP_ADMIN_SCHOOL_ID:global}
+  password-reset:
+    expires-minutes: 30
+  frontend-url: ${APP_FRONTEND_URL:https://hectorguzman.github.io/notiflow}
+  mail:
+    from: ${APP_MAIL_FROM:no-reply@notiflow.local}

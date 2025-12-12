@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Layout } from '@/components/layout';
+import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 
 export default function DashboardPage() {
   const stats = [
@@ -39,7 +39,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <Layout>
+    <ProtectedLayout>
       <div className="space-y-8">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -123,6 +123,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </ProtectedLayout>
   );
 }

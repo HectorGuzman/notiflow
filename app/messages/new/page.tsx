@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Layout } from '@/components/layout';
+import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Modal } from '@/components/ui';
 
 type Template = {
@@ -42,10 +42,14 @@ export default function NewMessagePage() {
   const [editContent, setEditContent] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [sendMode, setSendMode] = useState<'now' | 'schedule'>('now');
+  const [scheduleAt, setScheduleAt] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Mensaje enviado');
+    const modeText = sendMode === 'now' ? 'enviado' : `programado para ${scheduleAt || 'fecha no definida'}`;
+    alert(`Mensaje ${modeText}${attachedFile ? ' con imagen adjunta' : ''}`);
   };
 
   const handleApplyTemplate = (templateId: string) => {
@@ -120,7 +124,7 @@ export default function NewMessagePage() {
   };
 
   return (
-    <Layout>
+    <ProtectedLayout>
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -273,7 +277,14 @@ export default function NewMessagePage() {
                   Enviar Ahora
                 </label>
                 <label className="flex items-center">
-                  <input type="radio" name="schedule" defaultChecked className="w-4 h-4 text-primary" />
+                  <input
+                    type="radio"
+                    name="schedule"
+                    value="now"
+                    checked={sendMode === 'now'}
+                    onChange={() => setSendMode('now')}
+                    className="w-4 h-4 text-primary"
+                  />
                   <span className="ml-2 text-sm text-gray-700">Enviar inmediatamente</span>
                 </label>
               </div>
@@ -282,10 +293,45 @@ export default function NewMessagePage() {
                   Programar
                 </label>
                 <label className="flex items-center">
-                  <input type="radio" name="schedule" className="w-4 h-4 text-primary" />
+                  <input
+                    type="radio"
+                    name="schedule"
+                    value="schedule"
+                    checked={sendMode === 'schedule'}
+                    onChange={() => setSendMode('schedule')}
+                    className="w-4 h-4 text-primary"
+                  />
                   <span className="ml-2 text-sm text-gray-700">Programar para después</span>
                 </label>
+                {sendMode === 'schedule' && (
+                  <div className="mt-2">
+                    <input
+                      type="datetime-local"
+                      value={scheduleAt}
+                      onChange={(e) => setScheduleAt(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                      required
+                    />
+                  </div>
+                )}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Imagen (opcional)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setAttachedFile(e.target.files?.[0] || null)}
+                className="w-full text-sm"
+              />
+              {attachedFile && (
+                <p className="text-xs text-gray-600 mt-1">
+                  {attachedFile.name} ({Math.round(attachedFile.size / 1024)} KB)
+                </p>
+              )}
             </div>
 
             <div className="flex gap-4 pt-4">
@@ -293,7 +339,7 @@ export default function NewMessagePage() {
                 type="submit"
                 className="flex-1 px-6 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
               >
-                Enviar Mensaje
+                {sendMode === 'now' ? 'Enviar Mensaje' : 'Programar Mensaje'}
               </button>
               <Link
                 href="/messages"
@@ -346,6 +392,6 @@ export default function NewMessagePage() {
           <span className="font-semibold">{deleteTarget?.name}</span>? Esta acción no se puede deshacer.
         </p>
       </Modal>
-    </Layout>
+    </ProtectedLayout>
   );
 }

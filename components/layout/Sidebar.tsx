@@ -25,7 +25,7 @@ const menuItems = [
     icon: FiMessageCircle,
   },
   {
-    label: 'Mensajes',
+    label: 'Historial de Mensajes',
     href: '/messages',
     icon: FiMessageCircle,
   },

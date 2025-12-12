@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Layout } from '@/components/layout';
+import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 
 export default function MessagesPage() {
   const mockMessages = [
@@ -30,7 +30,7 @@ export default function MessagesPage() {
   ];
 
   return (
-    <Layout>
+    <ProtectedLayout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -86,6 +86,6 @@ export default function MessagesPage() {
           </table>
         </div>
       </div>
-    </Layout>
+    </ProtectedLayout>
   );
 }

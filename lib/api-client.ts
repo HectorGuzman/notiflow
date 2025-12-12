@@ -41,6 +41,10 @@ class APIClient {
     return this.client.post('/auth/login', { email, password });
   }
 
+  async getAuthMe() {
+    return this.client.get('/auth/me');
+  }
+
   async logout() {
     return this.client.post('/auth/logout');
   }
@@ -85,11 +89,51 @@ class APIClient {
 
   // Usuarios
   async getCurrentUser() {
-    return this.client.get('/users/me');
+    return this.client.get('/auth/me');
   }
 
   async getUsers(role?: string) {
     return this.client.get('/users', { params: { role } });
+  }
+
+  async createUser(data: {
+    name: string;
+    email: string;
+    role: string;
+    schoolId: string;
+    schoolName: string;
+    password: string;
+  }) {
+    return this.client.post('/users', data);
+  }
+
+  async getSchools() {
+    return this.client.get('/schools');
+  }
+
+  async createSchool(data: { id: string; name: string }) {
+    return this.client.post('/schools', data);
+  }
+
+  async getGroups(schoolId?: string) {
+    return this.client.get('/groups', { params: { schoolId } });
+  }
+
+  async createGroup(data: {
+    name: string;
+    description?: string;
+    memberIds: string[];
+    schoolId?: string;
+  }) {
+    return this.client.post('/groups', data);
+  }
+
+  async forgotPassword(email: string) {
+    return this.client.post('/auth/forgot', { email });
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    return this.client.post('/auth/reset', { token, newPassword });
   }
 }
 

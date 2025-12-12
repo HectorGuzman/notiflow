@@ -38,11 +38,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       user,
       isAuthenticated: !!user,
     }),
-  logout: () =>
+  logout: () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('authToken');
+    }
     set({
       user: null,
       isAuthenticated: false,
-    }),
+    });
+  },
 }));
 
 export const useSchoolStore = create<SchoolState>((set) => ({

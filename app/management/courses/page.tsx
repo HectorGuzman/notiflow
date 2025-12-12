@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Layout } from '@/components/layout';
+import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 
 export default function CoursesPage() {
   const courses = [
@@ -12,7 +12,7 @@ export default function CoursesPage() {
   ];
 
   return (
-    <Layout>
+    <ProtectedLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -46,6 +46,6 @@ export default function CoursesPage() {
           ))}
         </div>
       </div>
-    </Layout>
+    </ProtectedLayout>
   );
 }

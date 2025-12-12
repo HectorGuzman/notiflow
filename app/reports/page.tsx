@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Layout } from '@/components/layout';
+import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 
 export default function ReportsPage() {
   const kpis = [
@@ -69,7 +69,7 @@ export default function ReportsPage() {
   const maxWeeklySend = Math.max(...weeklySends.map((w) => w.value));
 
   return (
-    <Layout>
+    <ProtectedLayout>
       <div className="space-y-8">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -216,6 +216,6 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </ProtectedLayout>
   );
 }
