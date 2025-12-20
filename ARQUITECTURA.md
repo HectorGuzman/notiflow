@@ -25,7 +25,7 @@
 │  ┌──────────────────┴──────────────────┬─────────────────────┐  │
 │  ▼                                     ▼                     ▼   │
 │ Firestore             Cloud Tasks           Meta            │
-│ (Database)       (Message Scheduling)  WhatsApp API         │
+│ (Database)       (Message Scheduling)  Email/SMS Provider   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -89,7 +89,7 @@ User → MessageComposer → useMessageStore → API Client
                                                   ↓
                                             Cloud Tasks
                                                   ↓
-                                            WhatsApp API
+                                            Email/SMS Provider
 ```
 
 ### 3. Sincronización de Datos
@@ -324,7 +324,7 @@ GET /users?role=...
 
 ### Fase 2: Características Avanzadas
 - [ ] WebSockets para mensajes en tiempo real
-- [ ] Carga de archivos (media en WhatsApp)
+- [ ] Carga de archivos (media adjunta)
 - [ ] Sistema de notificaciones
 - [ ] Analytics y reportes
 
@@ -338,7 +338,7 @@ GET /users?role=...
 - [ ] Google Classroom API
 - [ ] Canvas LMS API
 - [ ] Zoom API
-- [ ] Webhooks de WhatsApp
+- [ ] Webhooks de entrega (email/SMS)
 
 ---
 

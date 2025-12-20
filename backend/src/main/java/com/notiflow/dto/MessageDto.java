@@ -9,7 +9,13 @@ public record MessageDto(
         String id,
         String content,
         String senderName,
+        String senderEmail,
         List<String> recipients,
+        List<String> channels,
+        MessageStatus emailStatus,
+        MessageStatus appStatus,
+        String schoolId,
+        String year,
         MessageStatus status,
         Instant createdAt
 ) {

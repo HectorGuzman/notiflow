@@ -6,12 +6,16 @@ public class SchoolDocument {
     @DocumentId
     private String id;
     private String name;
+    private String currentYear;
+    private String logoUrl;
 
     public SchoolDocument() {}
 
-    public SchoolDocument(String id, String name) {
+    public SchoolDocument(String id, String name, String currentYear, String logoUrl) {
         this.id = id;
         this.name = name;
+        this.currentYear = currentYear;
+        this.logoUrl = logoUrl;
     }
 
     public String getId() {
@@ -28,5 +32,21 @@ public class SchoolDocument {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getCurrentYear() {
+        return currentYear;
+    }
+
+    public void setCurrentYear(String currentYear) {
+        this.currentYear = currentYear;
+    }
+
+    public String getLogoUrl() {
+        return logoUrl;
+    }
+
+    public void setLogoUrl(String logoUrl) {
+        this.logoUrl = logoUrl;
     }
 }

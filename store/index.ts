@@ -1,10 +1,35 @@
 import { User, Message, Course, Student, Level } from '@/types';
 import { create } from 'zustand';
 
+const decodePermissionsFromToken = (token: string | null): string[] => {
+  if (!token) return [];
+  try {
+    const base64 = token.split('.')[1];
+    const nodeBuffer = typeof globalThis !== 'undefined' ? (globalThis as any).Buffer : undefined;
+    const json =
+      typeof window !== 'undefined'
+        ? atob(base64)
+        : nodeBuffer
+          ? nodeBuffer.from(base64, 'base64').toString('utf-8')
+          : '';
+    if (!json) return [];
+    const payload = JSON.parse(json);
+    const perms = payload?.permissions;
+    if (Array.isArray(perms)) {
+      return perms.map((p: string) => (p || '').toLowerCase());
+    }
+  } catch {
+    // ignore decode errors
+  }
+  return [];
+};
+
 interface AuthState {
   user: User | null;
+  permissions: string[];
   isAuthenticated: boolean;
-  setUser: (user: User | null) => void;
+  setUser: (user: User | null, permissions?: string[]) => void;
+  hasPermission: (permission: string) => boolean;
   logout: () => void;
 }
 
@@ -30,20 +55,45 @@ interface MessageState {
   setMessages: (messages: Message[]) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+interface YearState {
+  year: string;
+  setYear: (year: string) => void;
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
+  permissions: [],
   isAuthenticated: false,
-  setUser: (user: User | null) =>
+  setUser: (user: User | null, permissions?: string[]) => {
+    const token =
+      typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
+    const permsFromUser =
+      Array.isArray((user as any)?.permissions) ? (user as any).permissions : undefined;
+    const perms = user
+      ? permissions ?? permsFromUser ?? decodePermissionsFromToken(token)
+      : [];
     set({
       user,
+      permissions: perms,
       isAuthenticated: !!user,
-    }),
+    });
+  },
+  hasPermission: (permission: string) => {
+    if (!permission) return true;
+    const { permissions, user } = get();
+    if ((user?.schoolId || '').toLowerCase() === 'global') return true;
+    const perms = permissions || [];
+    if (!perms.length) return false;
+    const p = permission.toLowerCase();
+    return perms.includes('*') || perms.includes(p) || perms.includes(`${p}.self`);
+  },
   logout: () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('authToken');
     }
     set({
       user: null,
+      permissions: [],
       isAuthenticated: false,
     });
   },
@@ -85,4 +135,16 @@ export const useMessageStore = create<MessageState>((set) => ({
       draftMessages: state.draftMessages.filter((msg: Message) => msg.id !== id),
     })),
   setMessages: (messages: Message[]) => set({ messages }),
+}));
+
+export const useYearStore = create<YearState>((set) => ({
+  year:
+    (typeof window !== 'undefined' && localStorage.getItem('notiflow.year')) ||
+    new Date().getFullYear().toString(),
+  setYear: (year: string) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('notiflow.year', year);
+    }
+    set({ year });
+  },
 }));

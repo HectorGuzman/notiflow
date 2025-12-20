@@ -198,10 +198,10 @@ Error:     #DC2626
 │ Gestiona la configuración de tu institución                 │
 │                                                               │
 │ ┌──────────────────────────┐  ┌──────────────────────────┐ │
-│ │  🏫 Configuración de     │  │ 💬 Integración WhatsApp  │
+│ │  🏫 Configuración de     │  │ ✉️  Canales de envío      │
 │ │  Escuela                 │  │                          │
-│ │  Datos de tu institución │  │ API de WhatsApp Business │
-│ │  y configuración general │  │ Integration Settings     │
+│ │  Datos de tu institución │  │ Email/SMS y ajustes de    │
+│ │  y configuración general │  │ notificaciones            │
 │ │  [ Configurar ]          │  │ [ Configurar ]           │
 │ └──────────────────────────┘  └──────────────────────────┘ │
 │                                                               │

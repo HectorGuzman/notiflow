@@ -9,6 +9,8 @@ import com.notiflow.dto.UserCreateRequest;
 import com.notiflow.dto.UserDto;
 import com.notiflow.model.UserDocument;
 import com.notiflow.model.UserRole;
+import com.notiflow.service.PasswordResetService.PasswordResetResult;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -23,10 +25,14 @@ public class UserService {
 
     private final Firestore firestore;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordResetService passwordResetService;
+    private final EmailService emailService;
 
-    public UserService(Firestore firestore, PasswordEncoder passwordEncoder) {
+    public UserService(Firestore firestore, PasswordEncoder passwordEncoder, @Lazy PasswordResetService passwordResetService, EmailService emailService) {
         this.firestore = firestore;
         this.passwordEncoder = passwordEncoder;
+        this.passwordResetService = passwordResetService;
+        this.emailService = emailService;
     }
 
     public Optional<UserDocument> findByEmail(String email) {
@@ -62,9 +68,24 @@ public class UserService {
         }
     }
 
-    public List<UserDto> listAll() {
+    public void deleteById(String id) {
         try {
-            ApiFuture<QuerySnapshot> query = firestore.collection("users").limit(100).get();
+            firestore.collection("users").document(id).delete().get();
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Error eliminando usuario", e);
+        }
+    }
+
+    public List<UserDto> listAll(int page, int pageSize) {
+        try {
+            int safePage = Math.max(1, page);
+            int safeSize = Math.min(Math.max(1, pageSize), 100);
+            ApiFuture<QuerySnapshot> query = firestore.collection("users")
+                    .orderBy("name")
+                    .offset((safePage - 1) * safeSize)
+                    .limit(safeSize)
+                    .get();
             List<QueryDocumentSnapshot> docs = query.get().getDocuments();
             return docs.stream().map(doc -> {
                 UserDocument u = doc.toObject(UserDocument.class);
@@ -93,6 +114,16 @@ public class UserService {
         doc.setSchoolId(request.schoolId());
         doc.setSchoolName(request.schoolName());
         UserDocument saved = upsert(doc);
+        // Enviar correo de bienvenida con link de reseteo
+        try {
+            if (emailService.isEnabled()) {
+                PasswordResetResult pr = passwordResetService.createResetToken(saved.getEmail(), false);
+                emailService.sendWelcomeEmail(saved.getEmail(), saved.getName(), pr.token());
+            }
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(UserService.class)
+                    .warn("No se pudo enviar correo de bienvenida a {}", saved.getEmail(), e);
+        }
         return new UserDto(
                 saved.getId(),
                 saved.getName(),

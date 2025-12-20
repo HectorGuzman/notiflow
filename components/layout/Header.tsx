@@ -1,16 +1,91 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Button } from '@/components/ui';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store';
-import { FiLogOut, FiMenu, FiX } from 'react-icons/fi';
-import { useState } from 'react';
+import { useYearStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
+import Link from 'next/link';
+import {
+  FiLogOut,
+  FiMenu,
+  FiX,
+  FiHome,
+  FiMessageCircle,
+  FiUsers,
+  FiBarChart2,
+  FiSettings,
+} from 'react-icons/fi';
 
 export const Header: React.FC = () => {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const { user, logout, hasPermission } = useAuthStore();
+  const { year, setYear } = useYearStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [schoolLogo, setSchoolLogo] = React.useState<string | null>(null);
+
+  const canCreateMessage = hasPermission('messages.create');
+  const canListMessages = hasPermission('messages.list');
+  const canManageStudents =
+    hasPermission('students.create') ||
+    hasPermission('students.update') ||
+    hasPermission('students.delete');
+  const canManageGroups =
+    hasPermission('groups.list') ||
+    hasPermission('groups.create') ||
+    hasPermission('groups.update') ||
+    hasPermission('groups.delete');
+  const canSeeManagement = canManageStudents || canManageGroups;
+  const canSeeReports = hasPermission('reports.view');
+  const canSeeSettings =
+    hasPermission('users.list') ||
+    hasPermission('users.create') ||
+    hasPermission('users.delete') ||
+    hasPermission('schools.manage');
+
+  const mobileMenuItems = useMemo(
+    () => [
+      { label: 'Dashboard', href: '/dashboard', icon: FiHome },
+      ...(canCreateMessage ? [{ label: 'Enviar Mensaje', href: '/messages/new', icon: FiMessageCircle }] : []),
+      ...(canListMessages ? [{ label: 'Historial de Mensajes', href: '/messages', icon: FiMessageCircle }] : []),
+      ...(canSeeManagement
+        ? [
+            { label: 'Estudiantes y Apoderados', href: '/management/students', icon: FiUsers },
+            ...(canManageGroups
+              ? [{ label: 'Grupos', href: '/management/groups', icon: FiUsers }]
+              : []),
+          ]
+        : []),
+      ...(canSeeReports ? [{ label: 'Reportes de Mensajes', href: '/reports', icon: FiBarChart2 }] : []),
+      ...(canSeeSettings ? [{ label: 'Configuración', href: '/settings', icon: FiSettings }] : []),
+    ],
+    [
+      canCreateMessage,
+      canListMessages,
+      canSeeManagement,
+      canManageGroups,
+      canSeeReports,
+      canSeeSettings,
+    ]
+  );
+
+  React.useEffect(() => {
+    const loadSchool = async () => {
+      if (!user?.schoolId) {
+        setSchoolLogo(null);
+        return;
+      }
+      try {
+        const res = await apiClient.getSchoolById(user.schoolId);
+        const logo = res?.data?.logoUrl;
+        setSchoolLogo(logo || null);
+      } catch {
+        setSchoolLogo(null);
+      }
+    };
+    loadSchool();
+  }, [user?.schoolId]);
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
@@ -26,9 +101,15 @@ export const Header: React.FC = () => {
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">N</span>
-            </div>
+            {schoolLogo ? (
+              <div className="w-10 h-10 rounded-lg overflow-hidden border">
+                <img src={schoolLogo} alt="Logo colegio" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-lg">N</span>
+              </div>
+            )}
             <div className="hidden sm:block">
               <h1 className="text-xl font-bold text-gray-900">Notiflow</h1>
               <p className="text-xs text-gray-500">Mensajería Escolar</p>
@@ -39,6 +120,23 @@ export const Header: React.FC = () => {
           <div className="hidden sm:flex items-center gap-4">
             {user && (
               <>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500">Año</label>
+                  <select
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                    className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    {[0, 1].map((offset) => {
+                      const y = (new Date().getFullYear() + offset).toString();
+                      return (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
                 <div className="text-right">
                   <p className="text-sm font-medium text-gray-900">{user.name}</p>
                   <p className="text-xs text-gray-500 capitalize">{user.role}</p>
@@ -72,9 +170,26 @@ export const Header: React.FC = () => {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="sm:hidden pb-4 border-t border-gray-200 pt-4">
+          <div className="sm:hidden pb-4 border-t border-gray-200 pt-4 space-y-4">
             {user && (
               <>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500">Año</label>
+                  <select
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                    className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary w-full"
+                  >
+                    {[0, 1].map((offset) => {
+                      const y = (new Date().getFullYear() + offset).toString();
+                      return (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
                 <div className="mb-4 text-sm">
                   <p className="font-medium text-gray-900">{user.name}</p>
                   <p className="text-xs text-gray-500 capitalize">{user.role}</p>
@@ -82,6 +197,22 @@ export const Header: React.FC = () => {
                     {user.schoolName || `Colegio ${user.schoolId}`}
                   </p>
                 </div>
+                <nav className="space-y-2">
+                  {mobileMenuItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:border-primary hover:bg-green-50 text-sm font-medium text-gray-700"
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <Icon size={16} className="text-primary" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
                 <Button
                   variant="danger"
                   size="sm"

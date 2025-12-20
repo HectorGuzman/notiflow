@@ -51,11 +51,7 @@ class APIClient {
 
   // Mensajes
   async sendMessage(data: any) {
-    return this.client.post('/messages/send', data);
-  }
-
-  async scheduleMessage(data: any) {
-    return this.client.post('/messages/schedule', data);
+    return this.client.post('/messages', data);
   }
 
   async getMessages(params?: any) {
@@ -73,6 +69,26 @@ class APIClient {
   // Datos de escuela
   async getSchoolData() {
     return this.client.get('/school');
+  }
+
+  async getSchoolById(id: string) {
+    return this.client.get(`/schools/${id}`);
+  }
+
+  async updateSchool(id: string, data: { name: string; currentYear?: string; logoUrl?: string }) {
+    return this.client.put(`/schools/${id}`, data);
+  }
+
+  async createSchool(data: { id: string; name: string; currentYear?: string; logoUrl?: string }) {
+    return this.client.post('/schools', data);
+  }
+
+  async uploadSchoolLogo(id: string, file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return this.client.post(`/schools/${id}/logo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   }
 
   async getStudents(courseId?: string) {
@@ -107,16 +123,16 @@ class APIClient {
     return this.client.post('/users', data);
   }
 
+  async deleteUser(id: string) {
+    return this.client.delete(`/users/${id}`);
+  }
+
   async getSchools() {
     return this.client.get('/schools');
   }
 
-  async createSchool(data: { id: string; name: string }) {
-    return this.client.post('/schools', data);
-  }
-
-  async getGroups(schoolId?: string) {
-    return this.client.get('/groups', { params: { schoolId } });
+  async getGroups(schoolId?: string, year?: string) {
+    return this.client.get('/groups', { params: { schoolId, year } });
   }
 
   async createGroup(data: {
@@ -124,8 +140,26 @@ class APIClient {
     description?: string;
     memberIds: string[];
     schoolId?: string;
+    year?: string;
   }) {
     return this.client.post('/groups', data);
+  }
+
+  async updateGroup(
+    id: string,
+    data: {
+      name: string;
+      description?: string;
+      memberIds: string[];
+      schoolId?: string;
+      year?: string;
+    }
+  ) {
+    return this.client.put(`/groups/${id}`, data);
+  }
+
+  async deleteGroup(id: string) {
+    return this.client.delete(`/groups/${id}`);
   }
 
   async forgotPassword(email: string) {

@@ -8,6 +8,10 @@ import java.util.Optional;
 
 public record CurrentUser(String email, String role, String schoolId, String schoolName) {
 
+    public boolean isSuperAdmin() {
+        return role != null && "*".equals(role);
+    }
+
     public static Optional<CurrentUser> fromContext() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {

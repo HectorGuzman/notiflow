@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
@@ -31,8 +31,13 @@ type SchoolItem = {
 
 export default function GroupsPage() {
   const user = useAuthStore((state) => state.user);
-  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-  const isGlobalAdmin = isAdmin && (user?.schoolId || '').toLowerCase() === 'global';
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+  const canManageGroups =
+    hasPermission('groups.list') ||
+    hasPermission('groups.create') ||
+    hasPermission('groups.update') ||
+    hasPermission('groups.delete');
+  const isGlobalAdmin = (user?.schoolId || '').toLowerCase() === 'global';
   const router = useRouter();
 
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -49,16 +54,21 @@ export default function GroupsPage() {
   const [loadingSchools, setLoadingSchools] = useState(false);
   const [savingGroup, setSavingGroup] = useState(false);
   const [error, setError] = useState('');
+  const [searchUser, setSearchUser] = useState('');
+  const [searchGroup, setSearchGroup] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canManageGroups) return;
     loadUsers();
     loadGroups();
     if (isGlobalAdmin) loadSchools();
     if (!isGlobalAdmin && user?.schoolId) {
       setGroupForm((prev) => ({ ...prev, schoolId: user.schoolId }));
     }
-  }, [isAdmin, isGlobalAdmin, user]);
+  }, [canManageGroups, isGlobalAdmin, user]);
 
   const loadUsers = async () => {
     setLoadingUsers(true);
@@ -77,6 +87,17 @@ export default function GroupsPage() {
       setLoadingUsers(false);
     }
   };
+
+  const filteredUsers = useMemo(() => {
+    if (!searchUser.trim()) return users;
+    const term = searchUser.toLowerCase();
+    return users.filter(
+      (u) =>
+        u.name?.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term) ||
+        u.role?.toLowerCase().includes(term)
+    );
+  }, [searchUser, users]);
 
   const loadSchools = async () => {
     setLoadingSchools(true);
@@ -115,6 +136,29 @@ export default function GroupsPage() {
     }
   };
 
+  const filteredGroups = useMemo(() => {
+    const term = searchGroup.toLowerCase();
+    if (!term) return groups;
+    return groups.filter((g) => g.name?.toLowerCase().includes(term) || g.description?.toLowerCase().includes(term));
+  }, [groups, searchGroup]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / pageSize));
+  const paginatedGroups = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredGroups.slice(start, start + pageSize);
+  }, [filteredGroups, page]);
+
+  if (!canManageGroups) {
+    return (
+      <ProtectedLayout>
+        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
+          <p className="text-gray-600">No tienes permisos para gestionar grupos.</p>
+        </div>
+      </ProtectedLayout>
+    );
+  }
+
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingGroup(true);
@@ -131,37 +175,79 @@ export default function GroupsPage() {
         setError('Selecciona al menos un miembro');
         return;
       }
-      await apiClient.createGroup({
-        name: groupForm.name,
-        description: groupForm.description,
-        memberIds: groupForm.memberIds,
-        schoolId,
-      });
+      if (editingId) {
+        await apiClient.updateGroup(editingId, {
+          name: groupForm.name,
+          description: groupForm.description,
+          memberIds: groupForm.memberIds,
+          schoolId,
+        });
+      } else {
+        await apiClient.createGroup({
+          name: groupForm.name,
+          description: groupForm.description,
+          memberIds: groupForm.memberIds,
+          schoolId,
+        });
+      }
       setGroupForm({
         name: '',
         description: '',
         memberIds: [],
         schoolId: isGlobalAdmin ? '' : schoolId,
       });
+      setEditingId(null);
       await loadGroups();
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
         err?.response?.data?.error ||
         err?.message ||
-        'No se pudo crear el grupo';
+        'No se pudo guardar el grupo';
       setError(msg);
     } finally {
       setSavingGroup(false);
     }
   };
 
-  if (!isAdmin) {
-    useEffect(() => {
-      router.replace('/dashboard');
-    }, [router]);
-    return null;
-  }
+  const startEdit = (g: GroupItem) => {
+    setEditingId(g.id);
+    setGroupForm({
+      name: g.name,
+      description: g.description || '',
+      memberIds: g.memberIds || [],
+      schoolId: isGlobalAdmin ? g.schoolId : groupForm.schoolId || user?.schoolId || '',
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setGroupForm({
+      name: '',
+      description: '',
+      memberIds: [],
+      schoolId: isGlobalAdmin ? '' : user?.schoolId || '',
+    });
+  };
+
+  const handleDelete = async (id: string) => {
+    setSavingGroup(true);
+    setError('');
+    try {
+      await apiClient.deleteGroup(id);
+      if (editingId === id) cancelEdit();
+      await loadGroups();
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo eliminar el grupo';
+      setError(msg);
+    } finally {
+      setSavingGroup(false);
+    }
+  };
 
   return (
     <ProtectedLayout>
@@ -233,29 +319,49 @@ export default function GroupsPage() {
             )}
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Miembros</label>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                {users.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={groupForm.memberIds.includes(u.id)}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setGroupForm((prev) => {
-                          const next = new Set(prev.memberIds);
-                          if (checked) next.add(u.id);
-                          else next.delete(u.id);
-                          return { ...prev, memberIds: Array.from(next) };
-                        });
-                      }}
-                    />
-                    <span className="text-gray-800">{u.name}</span>
-                    <span className="text-gray-500 text-xs">({u.role})</span>
-                  </label>
-                ))}
-                {!users.length && (
-                  <p className="text-sm text-gray-500">No hay usuarios para seleccionar.</p>
-                )}
+              <div className="space-y-2 border border-gray-200 rounded-lg p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <input
+                    type="search"
+                    value={searchUser}
+                    onChange={(e) => setSearchUser(e.target.value)}
+                    placeholder="Buscar por nombre, email o rol"
+                    className="w-full sm:w-2/3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                  />
+                  <span className="text-xs text-gray-500">
+                    {filteredUsers.length} resultado(s)
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1">
+                  {filteredUsers.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2 text-sm border border-gray-200 rounded-lg px-3 py-2 hover:border-primary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={groupForm.memberIds.includes(u.id)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setGroupForm((prev) => {
+                            const next = new Set(prev.memberIds);
+                            if (checked) next.add(u.id);
+                            else next.delete(u.id);
+                            return { ...prev, memberIds: Array.from(next) };
+                          });
+                        }}
+                      />
+                      <div>
+                        <p className="text-gray-800 font-medium">{u.name}</p>
+                        <p className="text-gray-500 text-xs">{u.email}</p>
+                        <p className="text-gray-400 text-xs">{u.role}</p>
+                      </div>
+                    </label>
+                  ))}
+                  {!users.length && (
+                    <p className="text-sm text-gray-500">No hay usuarios para seleccionar.</p>
+                  )}
+                  {users.length > 0 && !filteredUsers.length && (
+                    <p className="text-sm text-gray-500">Sin coincidencias para la búsqueda.</p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="md:col-span-2 flex justify-end">
@@ -264,8 +370,18 @@ export default function GroupsPage() {
                 disabled={savingGroup}
                 className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
               >
-                {savingGroup ? 'Guardando...' : 'Crear grupo'}
+                {savingGroup ? 'Guardando...' : editingId ? 'Actualizar grupo' : 'Crear grupo'}
               </button>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="ml-3 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                  disabled={savingGroup}
+                >
+                  Cancelar
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -273,16 +389,28 @@ export default function GroupsPage() {
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">Grupos creados</h2>
-            <button
-              type="button"
-              onClick={loadGroups}
-              className="text-sm text-primary hover:text-green-800"
-            >
-              Refrescar
-            </button>
+            <div className="flex items-center gap-3">
+              <input
+                type="search"
+                value={searchGroup}
+                onChange={(e) => {
+                  setSearchGroup(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Buscar grupo"
+                className="w-48 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+              />
+              <button
+                type="button"
+                onClick={loadGroups}
+                className="text-sm text-primary hover:text-green-800"
+              >
+                Refrescar
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {groups.map((g) => (
+            {filteredGroups.slice((page - 1) * pageSize, page * pageSize).map((g) => (
               <div
                 key={g.id}
                 className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
@@ -292,11 +420,49 @@ export default function GroupsPage() {
                 <p className="text-xs text-gray-600">
                   Miembros: {g.memberIds?.length || 0} • Colegio: {g.schoolId}
                 </p>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => startEdit(g)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Editar
+                  </button>
+                  <span className="text-gray-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(g.id)}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    Eliminar
+                  </button>
+                </div>
               </div>
             ))}
-            {!groups.length && (
+            {!filteredGroups.length && (
               <div className="text-sm text-gray-500">No hay grupos registrados.</div>
             )}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <span className="text-sm text-gray-600">
+              Página {page} de {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
+            >
+              Siguiente
+            </button>
           </div>
         </div>
       </div>

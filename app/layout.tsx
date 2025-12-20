@@ -3,7 +3,10 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Notiflow - Mensajería Escolar',
-  description: 'Sistema de mensajería WhatsApp para colegios',
+  description: 'Sistema de mensajería informativa para colegios',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({
@@ -13,7 +16,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body className="bg-light min-h-screen">{children}</body>
     </html>
   );
 }

@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 
 public record SchoolRequest(
         @NotBlank String id,
-        @NotBlank String name
+        @NotBlank String name,
+        String currentYear,
+        String logoUrl
 ) {
 }

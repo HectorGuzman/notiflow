@@ -1,42 +1,78 @@
+'use client';
+
 import Link from 'next/link';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
+import { useEffect, useMemo, useState } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { useAuthStore, useYearStore } from '@/store';
+
+type MessageItem = { id: string; content: string; senderName: string; createdAt?: string; status?: string; recipients?: string[] };
+type UserItem = { id: string; role: string };
 
 export default function DashboardPage() {
-  const stats = [
-    {
-      label: 'Mensajes Enviados',
-      value: '342',
-    },
-    {
-      label: 'Usuarios Activos',
-      value: '1,245',
-    },
-    {
-      label: 'Tasa de Entrega',
-      value: '98.5%',
-    },
-  ];
+  const { year } = useYearStore();
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+  const canCreateMessage = hasPermission('messages.create');
+  const canSeeMessages = hasPermission('messages.list');
+  const canSeeReports = hasPermission('reports.view');
+  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [msgRes, usrRes] = await Promise.all([
+          apiClient.getMessages({ year }),
+          apiClient.getUsers(),
+        ]);
+        setMessages(msgRes.data || []);
+        setUsers(usrRes.data || []);
+      } catch {
+        // silencioso; mostramos conteos en cero
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [year]);
+
+  const stats = useMemo(
+    () => [
+      { label: 'Mensajes del año', value: messages.length },
+      { label: 'Usuarios', value: users.length },
+      { label: 'Admins', value: users.filter((u) => (u.role || '').toLowerCase() === 'admin').length },
+    ],
+    [messages.length, users]
+  );
 
   const quickActions = [
-    {
-      title: 'Enviar Nuevo Mensaje',
-      description: 'Crea y envía un mensaje a estudiantes, cursos o niveles',
-      href: '/messages/new',
-      color: 'bg-primary',
-    },
-    {
-      title: 'Mis Mensajes',
-      description: 'Revisa el historial de mensajes enviados',
-      href: '/messages',
-      color: 'bg-blue-600',
-    },
-    {
-      title: 'Gestionar Cursos',
-      description: 'Administra cursos y estudiantes',
-      href: '/management/courses',
-      color: 'bg-purple-600',
-    },
-  ];
+    canCreateMessage
+      ? {
+          title: 'Enviar Nuevo Mensaje',
+          description: 'Crea y envía un mensaje a estudiantes, cursos o niveles',
+          href: '/messages/new',
+          color: 'bg-primary',
+        }
+      : null,
+    canSeeMessages
+      ? {
+          title: 'Mis Mensajes',
+          description: 'Revisa el historial de mensajes enviados',
+          href: '/messages',
+          color: 'bg-blue-600',
+        }
+      : null,
+    canSeeReports
+      ? {
+          title: 'Reportes de Mensajes',
+          description: 'Revisa métricas de envíos',
+          href: '/reports',
+          color: 'bg-purple-600',
+        }
+      : null,
+  ].filter(Boolean) as { title: string; description: string; href: string; color: string }[];
 
   return (
     <ProtectedLayout>
@@ -46,22 +82,26 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-500">Panel general</p>
             <h1 className="text-4xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-gray-600 mt-1">
-              Gestiona tu comunicación escolar por WhatsApp
+              Gestiona tu comunicación escolar de forma centralizada
             </p>
           </div>
-          <Link
-            href="/messages/new"
-            className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-green-700 transition-colors"
-          >
-            + Enviar mensaje
-          </Link>
+          {canCreateMessage && (
+            <Link
+              href="/messages/new"
+              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-green-700 transition-colors"
+            >
+              + Enviar mensaje
+            </Link>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {stats.map((stat, idx) => (
             <div key={idx} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
               <p className="text-gray-600 text-sm font-medium">{stat.label}</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{stat.value}</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">
+                {loading ? '—' : stat.value}
+              </p>
             </div>
           ))}
         </div>
@@ -101,25 +141,36 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-gray-900">Mensajes Recientes</h2>
-            <Link
-              href="/messages/new"
-              className="px-4 py-2 text-primary border border-primary rounded-lg hover:bg-blue-50 transition-colors"
-            >
-              Enviar mensaje
-            </Link>
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-6 text-center py-12 shadow-sm">
-            <p className="text-gray-500">
-              No hay mensajes aún. ¡Envía tu primer mensaje!
-            </p>
-            <div className="mt-4">
-              <Link
-                href="/messages/new"
-                className="inline-block px-6 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-              >
-                Redactar mensaje
-              </Link>
-            </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+            {loading && <p className="text-sm text-gray-500">Cargando mensajes...</p>}
+            {!loading && messages.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-gray-500">No hay mensajes aún. ¡Envía tu primer mensaje!</p>
+                {canCreateMessage && (
+                  <div className="mt-4">
+                    <Link
+                      href="/messages/new"
+                      className="inline-block px-6 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                    >
+                      Redactar mensaje
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+            {!loading && messages.length > 0 && (
+              <ul className="divide-y divide-gray-200">
+                {messages.slice(0, 5).map((m) => (
+                  <li key={m.id} className="py-3">
+                    <p className="text-sm text-gray-900 line-clamp-2">{m.content}</p>
+                    <p className="text-xs text-gray-500">
+                      {m.senderName || '—'} · {m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </div>

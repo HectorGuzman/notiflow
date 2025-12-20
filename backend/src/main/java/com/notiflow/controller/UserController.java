@@ -3,6 +3,7 @@ package com.notiflow.controller;
 import com.notiflow.dto.UserCreateRequest;
 import com.notiflow.dto.UserDto;
 import com.notiflow.service.UserService;
+import com.notiflow.service.AccessControlService;
 import com.notiflow.util.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -10,41 +11,42 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/users")
 public class UserController {
 
     private final UserService userService;
+    private final AccessControlService accessControlService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AccessControlService accessControlService) {
         this.userService = userService;
+        this.accessControlService = accessControlService;
     }
 
     @GetMapping
-    public ResponseEntity<List<UserDto>> list() {
-        CurrentUser.fromContext().ifPresentOrElse(user -> {
-            if (!"ADMIN".equalsIgnoreCase(user.role())) {
-                throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN);
-            }
-        }, () -> {
-            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        });
-        return ResponseEntity.ok(userService.listAll());
+    public ResponseEntity<List<UserDto>> list(
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "pageSize", defaultValue = "50") int pageSize
+    ) {
+        CurrentUser user = CurrentUser.fromContext().orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        accessControlService.check(user, "users.list", user.schoolId(), Optional.empty());
+        return ResponseEntity.ok(userService.listAll(page, pageSize));
     }
 
     @PostMapping
     public ResponseEntity<UserDto> create(@Valid @RequestBody UserCreateRequest request) {
         CurrentUser current = CurrentUser.fromContext().orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        if (!"ADMIN".equalsIgnoreCase(current.role())) {
-            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "Solo admins pueden crear usuarios");
-        }
-        // admins solo pueden crear usuarios en su colegio, salvo admin global (schoolId = "global")
-        if (current.schoolId() != null && !"global".equalsIgnoreCase(current.schoolId())) {
-            if (!current.schoolId().equalsIgnoreCase(request.schoolId())) {
-                throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes crear usuarios en otro colegio");
-            }
-        }
+        accessControlService.check(current, "users.create", request.schoolId(), Optional.empty());
         return ResponseEntity.ok(userService.create(request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        CurrentUser current = CurrentUser.fromContext().orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        accessControlService.check(current, "users.delete", current.schoolId(), Optional.empty());
+        userService.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -4,5 +4,7 @@ public enum MessageStatus {
     DRAFT,
     SCHEDULED,
     SENT,
-    FAILED
+    FAILED,
+    PENDING,
+    READ
 }

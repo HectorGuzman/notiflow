@@ -43,6 +43,8 @@ public class SchoolService {
             SchoolDocument doc = new SchoolDocument();
             doc.setId(request.id());
             doc.setName(request.name());
+            doc.setCurrentYear(request.currentYear());
+            doc.setLogoUrl(request.logoUrl());
             DocumentReference ref = firestore.collection("schools").document(doc.getId());
             ref.set(doc).get();
             return doc;
@@ -67,6 +69,33 @@ public class SchoolService {
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Error obteniendo escuela", e);
+        }
+    }
+
+    public SchoolDocument update(String id, SchoolRequest request) {
+        try {
+            DocumentReference ref = firestore.collection("schools").document(id);
+            DocumentSnapshot snap = ref.get().get();
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("Escuela no existe");
+            }
+            SchoolDocument doc = snap.toObject(SchoolDocument.class);
+            if (doc == null) {
+                throw new IllegalArgumentException("Escuela inválida");
+            }
+            doc.setName(request.name());
+            if (request.currentYear() != null) {
+                doc.setCurrentYear(request.currentYear());
+            }
+            if (request.logoUrl() != null) {
+                doc.setLogoUrl(request.logoUrl());
+            }
+            ref.set(doc).get();
+            doc.setId(id);
+            return doc;
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Error actualizando escuela", e);
         }
     }
 }

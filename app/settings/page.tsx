@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { apiClient } from '@/lib/api-client';
 import { useAuthStore } from '@/store';
+import { FiEye, FiEyeOff } from 'react-icons/fi';
+import { Modal } from '@/components/ui';
 
 type UserListItem = {
   id: string;
@@ -18,12 +20,22 @@ type UserListItem = {
 type SchoolItem = {
   id: string;
   name: string;
+  currentYear?: string;
+  logoUrl?: string;
 };
 
 export default function SettingsPage() {
   const user = useAuthStore((state) => state.user);
-  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-  const isGlobalAdmin = isAdmin && (user?.schoolId || '').toLowerCase() === 'global';
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+  const canManageUsers =
+    hasPermission('users.list') ||
+    hasPermission('users.create') ||
+    hasPermission('users.delete');
+  const canManageSchools = hasPermission('schools.manage');
+  const canAccessSettings = canManageUsers || canManageSchools;
+  const canDeleteUsers = hasPermission('users.delete');
+  const canCreateUsers = hasPermission('users.create');
+  const isGlobalAdmin = (user?.schoolId || '').toLowerCase() === 'global';
 
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [schools, setSchools] = useState<SchoolItem[]>([]);
@@ -41,7 +53,13 @@ export default function SettingsPage() {
   const [schoolForm, setSchoolForm] = useState({
     id: '',
     name: '',
+    currentYear: '',
+    logoUrl: '',
   });
+  const [editingSchool, setEditingSchool] = useState<SchoolItem | null>(null);
+  const [showEditSchool, setShowEditSchool] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [showUserPassword, setShowUserPassword] = useState(false);
   const [csvInfo, setCsvInfo] = useState<{ fileName: string; rows: number }>({
     fileName: '',
     rows: 0,
@@ -52,6 +70,9 @@ export default function SettingsPage() {
   const [savingUser, setSavingUser] = useState(false);
   const [savingSchool, setSavingSchool] = useState(false);
   const [importingCsv, setImportingCsv] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [userToDelete, setUserToDelete] = useState<UserListItem | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
 
   const availableRoles = useMemo(
     () => [
@@ -64,13 +85,17 @@ export default function SettingsPage() {
   );
 
   useEffect(() => {
-    if (!isAdmin) return;
-    loadUsers();
-    loadSchools();
-  }, [isAdmin]);
+    if (!canAccessSettings) return;
+    if (canManageUsers) {
+      loadUsers();
+    }
+    if (canManageSchools) {
+      loadSchools();
+    }
+  }, [canAccessSettings, canManageSchools, canManageUsers]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canManageUsers) return;
     // Prefill school for admins de colegio
     if (!isGlobalAdmin && user?.schoolId) {
       setUserForm((prev) => ({
@@ -79,7 +104,7 @@ export default function SettingsPage() {
         schoolName: user.schoolName || '',
       }));
     }
-  }, [isAdmin, isGlobalAdmin, user]);
+  }, [canManageUsers, isGlobalAdmin, user]);
 
   const loadUsers = async () => {
     setLoadingUsers(true);
@@ -129,8 +154,10 @@ export default function SettingsPage() {
       await apiClient.createSchool({
         id: schoolForm.id.trim(),
         name: schoolForm.name.trim(),
+        currentYear: schoolForm.currentYear || undefined,
+        logoUrl: schoolForm.logoUrl || undefined,
       });
-      setSchoolForm({ id: '', name: '' });
+      setSchoolForm({ id: '', name: '', currentYear: '', logoUrl: '' });
       await loadSchools();
     } catch (err: any) {
       const msg =
@@ -138,6 +165,33 @@ export default function SettingsPage() {
         err?.response?.data?.error ||
         err?.message ||
         'No se pudo crear la escuela';
+      setError(msg);
+    } finally {
+      setSavingSchool(false);
+    }
+  };
+
+  const handleUploadLogo = async () => {
+    if (!editingSchool || !logoFile) return;
+    setSavingSchool(true);
+    setError('');
+    try {
+      const res = await apiClient.uploadSchoolLogo(editingSchool.id, logoFile);
+      const updated = res.data;
+      setEditingSchool({
+        id: updated.id,
+        name: updated.name,
+        currentYear: updated.currentYear,
+        logoUrl: updated.logoUrl,
+      });
+      await loadSchools();
+      setLogoFile(null);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo subir el logo';
       setError(msg);
     } finally {
       setSavingSchool(false);
@@ -183,6 +237,7 @@ export default function SettingsPage() {
 
   const handleImportCsv = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageUsers) return;
     if (!csvData.length) {
       setError('Sube un CSV válido antes de importar');
       return;
@@ -234,8 +289,47 @@ export default function SettingsPage() {
     }
   };
 
+  const openDeleteModal = (u: UserListItem) => {
+    setError('');
+    setUserToDelete(u);
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (!canDeleteUsers) return;
+    if (!userToDelete) return;
+    setDeletingUser(true);
+    setError('');
+    try {
+      await apiClient.deleteUser(userToDelete.id);
+      await loadUsers();
+      setUserToDelete(null);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo eliminar el usuario';
+      setError(msg);
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
+  const filteredUsers = useMemo(() => {
+    if (!userSearch.trim()) return users;
+    const term = userSearch.toLowerCase();
+    return users.filter(
+      (u) =>
+        u.name?.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term) ||
+        u.role?.toLowerCase().includes(term) ||
+        u.schoolName?.toLowerCase().includes(term)
+    );
+  }, [userSearch, users]);
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateUsers) return;
     setSavingUser(true);
     setError('');
     try {
@@ -281,6 +375,17 @@ export default function SettingsPage() {
     }
   };
 
+  if (!canAccessSettings) {
+    return (
+      <ProtectedLayout>
+        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
+          <p className="text-gray-600">No tienes permisos para acceder a configuración.</p>
+        </div>
+      </ProtectedLayout>
+    );
+  }
+
   return (
     <ProtectedLayout>
       <div className="space-y-6">
@@ -304,7 +409,7 @@ export default function SettingsPage() {
         )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {isAdmin && (
+          {canManageUsers && (
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
@@ -313,106 +418,129 @@ export default function SettingsPage() {
                     Crea y administra usuarios dentro de tu colegio
                   </p>
                 </div>
-                <span className="text-xs px-3 py-1 rounded-full bg-primary text-white">Admin</span>
+                <div className="flex flex-col gap-2 items-end">
+                  <input
+                    type="search"
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    placeholder="Buscar por nombre, email o rol"
+                    className="w-64 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                  />
+                  <span className="text-xs text-gray-500">
+                    {filteredUsers.length} resultado(s)
+                  </span>
+                </div>
               </div>
 
-              <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleCreateUser}>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                  <input
-                    type="text"
-                    value={userForm.name}
-                    onChange={(e) => setUserForm((prev) => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={userForm.email}
-                    onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-                  <select
-                    value={userForm.role}
-                    onChange={(e) => setUserForm((prev) => ({ ...prev, role: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 bg-white"
-                  >
-                    {availableRoles.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
-                  <input
-                    type="password"
-                    value={userForm.password}
-                    onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                    required
-                  />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Colegio</label>
-                  {isGlobalAdmin ? (
+              {canCreateUsers && (
+                <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleCreateUser}>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                    <input
+                      type="text"
+                      value={userForm.name}
+                      onChange={(e) => setUserForm((prev) => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={userForm.email}
+                      onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
                     <select
-                      value={userForm.schoolId}
-                      onChange={(e) =>
-                        setUserForm((prev) => ({ ...prev, schoolId: e.target.value }))
-                      }
+                      value={userForm.role}
+                      onChange={(e) => setUserForm((prev) => ({ ...prev, role: e.target.value }))}
                       className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 bg-white"
                     >
-                      <option value="">Selecciona colegio</option>
-                      {schools.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.id})
+                      {availableRoles.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={user?.schoolName || user?.schoolId || ''}
-                      disabled
-                      className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-100 text-gray-600"
-                    />
-                  )}
-                </div>
-                {isGlobalAdmin && (
-                  <div className="md:col-span-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nombre del colegio
-                    </label>
-                    <input
-                      type="text"
-                      value={userForm.schoolName}
-                      onChange={(e) =>
-                        setUserForm((prev) => ({ ...prev, schoolName: e.target.value }))
-                      }
-                      placeholder="Solo si el colegio no está en la lista"
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                    />
                   </div>
-                )}
-                <div className="md:col-span-2 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={savingUser}
-                    className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
-                  >
-                    {savingUser ? 'Guardando...' : 'Crear usuario'}
-                  </button>
-                </div>
-              </form>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                    <div className="relative">
+                      <input
+                        type={showUserPassword ? 'text' : 'password'}
+                        value={userForm.password}
+                        onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 pr-10"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowUserPassword((p) => !p)}
+                        className="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-primary"
+                        aria-label="Mostrar contraseña"
+                      >
+                        {showUserPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="md:col-span-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Colegio</label>
+                    {isGlobalAdmin ? (
+                      <select
+                        value={userForm.schoolId}
+                        onChange={(e) =>
+                          setUserForm((prev) => ({ ...prev, schoolId: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 bg-white"
+                      >
+                        <option value="">Selecciona colegio</option>
+                        {schools.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.id})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={user?.schoolName || user?.schoolId || ''}
+                        disabled
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-100 text-gray-600"
+                      />
+                    )}
+                  </div>
+                  {isGlobalAdmin && (
+                    <div className="md:col-span-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Nombre del colegio
+                      </label>
+                      <input
+                        type="text"
+                        value={userForm.schoolName}
+                        onChange={(e) =>
+                          setUserForm((prev) => ({ ...prev, schoolName: e.target.value }))
+                        }
+                        placeholder="Solo si el colegio no está en la lista"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                      />
+                    </div>
+                  )}
+                  <div className="md:col-span-2 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={savingUser}
+                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+                    >
+                      {savingUser ? 'Guardando...' : 'Crear usuario'}
+                    </button>
+                  </div>
+                </form>
+              )}
 
               <div className="border-t border-gray-200 pt-4">
                 <div className="flex items-center justify-between mb-2">
@@ -427,10 +555,11 @@ export default function SettingsPage() {
                         <th className="px-3 py-2">Email</th>
                         <th className="px-3 py-2">Rol</th>
                         <th className="px-3 py-2">Colegio</th>
+                        <th className="px-3 py-2 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {users.map((u) => (
+                      {filteredUsers.map((u) => (
                         <tr key={u.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-medium text-gray-900">{u.name}</td>
                           <td className="px-3 py-2 text-gray-700">{u.email}</td>
@@ -438,12 +567,32 @@ export default function SettingsPage() {
                           <td className="px-3 py-2 text-gray-700">
                             {u.schoolName || u.schoolId}
                           </td>
-                        </tr>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex justify-end">
+                              {canDeleteUsers && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDeleteModal(u)}
+                                  className="text-xs text-red-600 hover:underline"
+                                >
+                                  Eliminar
+                                </button>
+                              )}
+                            </div>
+                         </td>
+                       </tr>
                       ))}
                       {!users.length && (
                         <tr>
                           <td className="px-3 py-3 text-gray-500" colSpan={4}>
                             No hay usuarios aún.
+                          </td>
+                        </tr>
+                      )}
+                      {users.length > 0 && !filteredUsers.length && (
+                        <tr>
+                          <td className="px-3 py-3 text-gray-500" colSpan={5}>
+                            Sin coincidencias para la búsqueda.
                           </td>
                         </tr>
                       )}
@@ -454,14 +603,14 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {isGlobalAdmin && (
+          {canManageSchools && isGlobalAdmin && (
             <>
               <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900">Colegios</h2>
-                    <p className="text-sm text-gray-600">Gestiona la lista de colegios</p>
-                  </div>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Colegios</h2>
+                  <p className="text-sm text-gray-600">Gestiona la lista de colegios</p>
+                </div>
                   {loadingSchools && <span className="text-sm text-gray-500">Cargando...</span>}
                 </div>
                 <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={handleCreateSchool}>
@@ -486,6 +635,26 @@ export default function SettingsPage() {
                       required
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Año actual (opcional)</label>
+                    <input
+                      type="text"
+                      value={schoolForm.currentYear}
+                      onChange={(e) => setSchoolForm((prev) => ({ ...prev, currentYear: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                      placeholder="2025"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Logo (URL)</label>
+                    <input
+                      type="text"
+                      value={schoolForm.logoUrl}
+                      onChange={(e) => setSchoolForm((prev) => ({ ...prev, logoUrl: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                      placeholder="https://ejemplo.com/logo.png"
+                    />
+                  </div>
                   <div className="md:col-span-3 flex justify-end">
                     <button
                       type="submit"
@@ -503,10 +672,30 @@ export default function SettingsPage() {
                     {schools.map((s) => (
                       <div
                         key={s.id}
-                        className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
+                        className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow flex items-center gap-3"
                       >
-                        <p className="text-sm font-semibold text-gray-900">{s.name}</p>
-                        <p className="text-xs text-gray-600">{s.id}</p>
+                        {s.logoUrl ? (
+                          <img src={s.logoUrl} alt={s.name} className="w-10 h-10 rounded object-cover border" />
+                        ) : (
+                          <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
+                            {s.name?.charAt(0) || '?'}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-900">{s.name}</p>
+                          <p className="text-xs text-gray-600">{s.id}</p>
+                          {s.currentYear && <p className="text-xs text-gray-500">Año: {s.currentYear}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          className="text-xs text-primary hover:underline"
+                          onClick={() => {
+                            setEditingSchool(s);
+                            setShowEditSchool(true);
+                          }}
+                        >
+                          Editar
+                        </button>
                       </div>
                     ))}
                     {!schools.length && (
@@ -576,17 +765,110 @@ export default function SettingsPage() {
             </>
           )}
 
-          {!isAdmin && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">Acceso limitado</h2>
-              <p className="text-sm text-gray-600">
-                Solo los administradores pueden gestionar usuarios y colegios. Si necesitas acceso,
-                contacta a tu administrador.
-              </p>
-            </div>
-          )}
         </div>
       </div>
+
+      <Modal
+        isOpen={!!userToDelete}
+        title="Confirmar eliminación"
+        onClose={() => setUserToDelete(null)}
+        onConfirm={handleConfirmDeleteUser}
+        confirmText={deletingUser ? 'Eliminando...' : 'Eliminar usuario'}
+      >
+        <p className="text-sm text-gray-700">
+          ¿Seguro que deseas eliminar al usuario{' '}
+          <span className="font-semibold">
+            {userToDelete?.name || userToDelete?.email || 'sin nombre'}
+          </span>
+          ? Esta acción no se puede deshacer.
+        </p>
+      </Modal>
+
+      <Modal
+        isOpen={showEditSchool && !!editingSchool}
+        title="Editar colegio"
+        onClose={() => {
+          setShowEditSchool(false);
+          setEditingSchool(null);
+        }}
+        onConfirm={async () => {
+          if (!editingSchool) return;
+          setSavingSchool(true);
+          setError('');
+          try {
+            await apiClient.updateSchool(editingSchool.id, {
+              name: editingSchool.name,
+              currentYear: editingSchool.currentYear,
+              logoUrl: editingSchool.logoUrl,
+            });
+            await loadSchools();
+            setShowEditSchool(false);
+            setEditingSchool(null);
+          } catch (err: any) {
+            const msg =
+              err?.response?.data?.message ||
+              err?.response?.data?.error ||
+              err?.message ||
+              'No se pudo actualizar el colegio';
+            setError(msg);
+          } finally {
+            setSavingSchool(false);
+          }
+        }}
+        confirmText={savingSchool ? 'Guardando...' : 'Guardar cambios'}
+      >
+        {editingSchool && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+              <input
+                type="text"
+                value={editingSchool.name}
+                onChange={(e) => setEditingSchool({ ...editingSchool, name: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Año actual</label>
+              <input
+                type="text"
+                value={editingSchool.currentYear || ''}
+                onChange={(e) => setEditingSchool({ ...editingSchool, currentYear: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Logo (URL)</label>
+              <input
+                type="text"
+                value={editingSchool.logoUrl || ''}
+                onChange={(e) => setEditingSchool({ ...editingSchool, logoUrl: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Logo (archivo)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                className="w-full text-sm"
+              />
+              {logoFile && (
+                <p className="text-xs text-gray-600 mt-1">{logoFile.name}</p>
+              )}
+              <button
+                type="button"
+                onClick={handleUploadLogo}
+                disabled={savingSchool || !logoFile}
+                className="mt-2 px-3 py-1.5 bg-primary text-white rounded-lg text-sm disabled:opacity-60"
+              >
+                {savingSchool ? 'Subiendo...' : 'Subir logo'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </ProtectedLayout>
   );
 }

@@ -9,6 +9,7 @@ public record GroupRequest(
         @NotBlank String name,
         String description,
         @NotEmpty List<String> memberIds,
-        String schoolId
+        String schoolId,
+        String year
 ) {
 }

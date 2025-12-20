@@ -18,7 +18,26 @@ export const Sidebar: React.FC = () => {
   const pathname = usePathname();
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const user = useAuthStore((state) => state.user);
-  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+
+  const canCreateMessage = hasPermission('messages.create');
+  const canListMessages = hasPermission('messages.list');
+  const canManageStudents =
+    hasPermission('students.create') ||
+    hasPermission('students.update') ||
+    hasPermission('students.delete');
+  const canManageGroups =
+    hasPermission('groups.list') ||
+    hasPermission('groups.create') ||
+    hasPermission('groups.update') ||
+    hasPermission('groups.delete');
+  const canSeeManagement = canManageStudents || canManageGroups;
+  const canSeeReports = hasPermission('reports.view');
+  const canSeeSettings =
+    hasPermission('users.list') ||
+    hasPermission('users.create') ||
+    hasPermission('users.delete') ||
+    hasPermission('schools.manage');
 
   const menuItems = useMemo(
     () => [
@@ -31,40 +50,53 @@ export const Sidebar: React.FC = () => {
         label: 'Enviar Mensaje',
         href: '/messages/new',
         icon: FiMessageCircle,
+        hidden: !canCreateMessage,
       },
       {
         label: 'Historial de Mensajes',
         href: '/messages',
         icon: FiMessageCircle,
+        hidden: !canListMessages,
       },
       {
         label: 'Gestión',
         icon: FiUsers,
+        hidden: !canSeeManagement,
         submenu: [
-          { label: 'Estudiantes', href: '/management/students' },
-          { label: 'Cursos', href: '/management/courses' },
-          { label: 'Niveles', href: '/management/levels' },
-          ...(isAdmin ? [{ label: 'Grupos', href: '/management/groups' }] : []),
+          ...(canManageStudents ? [{ label: 'Estudiantes y Apoderados', href: '/management/students' }] : []),
+          ...(canManageGroups ? [{ label: 'Grupos', href: '/management/groups' }] : []),
         ],
       },
       {
-        label: 'Reportes',
+        label: 'Reportes de Mensajes',
         href: '/reports',
         icon: FiBarChart2,
+        hidden: !canSeeReports,
       },
       {
         label: 'Configuración',
         href: '/settings',
         icon: FiSettings,
+        hidden: !canSeeSettings,
       },
     ],
-    [isAdmin]
+    [
+      canCreateMessage,
+      canListMessages,
+      canManageStudents,
+      canManageGroups,
+      canSeeManagement,
+      canSeeReports,
+      canSeeSettings,
+    ]
   );
 
   return (
     <aside className="hidden sm:flex sm:flex-col w-64 bg-secondary text-white">
       <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-        {menuItems.map((item) => {
+        {menuItems
+          .filter((item) => !item.hidden)
+          .map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
           const hasSubmenu = 'submenu' in item;

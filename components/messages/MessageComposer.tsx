@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Button, Select, TextArea } from '@/components/ui';
 import { FiPlus, FiX } from 'react-icons/fi';
 import clsx from 'clsx';
 import { Recipient } from '@/types';
+import { apiClient } from '@/lib/api-client';
 
 interface MessageComposerProps {
   onSend?: (data: any) => void;
@@ -21,16 +22,44 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const [selectedRecipient, setSelectedRecipient] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
   const [sendNow, setSendNow] = useState(true);
+  const [users, setUsers] = useState<{ id: string; name: string; email?: string }[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState('');
 
-  const mockOptions = [
-    { value: 'student-1', label: 'Juan Pérez' },
-    { value: 'student-2', label: 'María García' },
-    { value: 'student-3', label: 'Carlos López' },
-  ];
+  useEffect(() => {
+    const load = async () => {
+      setLoadingUsers(true);
+      setUsersError('');
+      try {
+        const res = await apiClient.getUsers();
+        const data = (res.data || []).map((u: any) => ({
+          id: u.id,
+          name: u.name || u.email || u.id,
+          email: u.email,
+        }));
+        setUsers(data);
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'No se pudieron cargar usuarios';
+        setUsersError(msg);
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+    load();
+  }, []);
+
+  const recipientOptions = useMemo(
+    () => users.map((u) => ({ value: u.id, label: u.name || u.email || u.id })),
+    [users]
+  );
 
   const addRecipient = () => {
     if (selectedRecipient) {
-      const option = mockOptions.find((o) => o.value === selectedRecipient);
+      const option = recipientOptions.find((o) => o.value === selectedRecipient);
       if (option) {
         const newRecipient: Recipient = {
           id: selectedRecipient,
@@ -108,7 +137,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
 
           <Select
             label="Seleccionar"
-            options={mockOptions}
+            options={recipientOptions}
             value={selectedRecipient}
             onChange={(val) => setSelectedRecipient(val as string)}
             placeholder="Elige un destinatario"
@@ -146,6 +175,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
             </div>
           </div>
         )}
+        {loadingUsers && <p className="text-sm text-gray-500 mt-2">Cargando usuarios...</p>}
+        {usersError && <p className="text-sm text-red-600 mt-2">{usersError}</p>}
       </div>
 
       {/* Schedule Section */}

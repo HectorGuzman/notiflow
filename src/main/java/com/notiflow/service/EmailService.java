@@ -88,6 +88,39 @@ public class EmailService {
         }
     }
 
+    public boolean sendMessageEmail(String to, String subject, String body) {
+        if (!enabled) {
+            log.warn("SendGrid no configurado; se omite envío a {}", to);
+            return false;
+        }
+        Mail mail = new Mail(
+                new Email(senderEmail, "Notiflow"),
+                subject,
+                new Email(to),
+                new Content("text/plain", body)
+        );
+        Request request = new Request();
+        try {
+            request.setMethod(Method.POST);
+            request.setEndpoint("mail/send");
+            request.setBody(mail.build());
+            Response response = sendGrid.api(request);
+            boolean ok = response != null && response.getStatusCode() >= 200 && response.getStatusCode() < 300;
+            if (!ok) {
+                log.error("Fallo al enviar correo a {} (status {}): {}", to,
+                        response != null ? response.getStatusCode() : "?", response != null ? response.getBody() : "sin body");
+            }
+            return ok;
+        } catch (IOException e) {
+            log.error("No se pudo enviar correo a {}", to, e);
+            return false;
+        }
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     private String buildResetLink(String token) {
         String base = frontendBaseUrl == null || frontendBaseUrl.isBlank()
                 ? "https://hectorguzman.github.io/notiflow"

@@ -2,7 +2,7 @@
 
 ## ✅ Resumen de lo que se Entregó
 
-Has recibido una aplicación **completamente funcional y lista para producción** de mensajería escolar por WhatsApp. Aquí está todo lo que incluye:
+Has recibido una aplicación **completamente funcional y lista para producción** de mensajería escolar multicanal. Aquí está todo lo que incluye:
 
 ---
 
@@ -100,7 +100,7 @@ notiflow/                          # 🚀 Proyecto raíz
 ## 🎨 Diseño & Estilos
 
 ✅ **Responsivo** - Mobile first (tested en 3+ breakpoints)
-✅ **Paleta de Colores** - WhatsApp inspired
+✅ **Paleta de Colores** - Inspirada en la identidad de Notiflow
 ✅ **Tailwind CSS** - Utilidades completas
 ✅ **Iconografía** - React Icons integrado
 ✅ **Animaciones** - Transiciones suaves
@@ -210,7 +210,7 @@ El proyecto está listo para conectarse a tu backend en GCP. Solo necesitas:
 
 1. Actualizar `NEXT_PUBLIC_API_URL` en `.env.local`
 2. Implementar los endpoints según `BACKEND_API.md`
-3. Configurar WhatsApp API con Meta
+3. Configurar proveedor de correo/SMS
 4. Conectar Firestore para almacenar datos
 
 ---
@@ -244,7 +244,7 @@ Deployment:
 
 ### Corto Plazo (1-2 semanas)
 1. Conectar backend real en GCP
-2. Integrar Meta WhatsApp Business API
+2. Integrar proveedor de correo/SMS (SendGrid, Twilio, etc.)
 3. Crear sistema de notificaciones
 4. Agregar carga de archivos
 
@@ -294,7 +294,6 @@ npm run deploy
 ```
 NEXT_PUBLIC_API_URL=https://api.notiflow.app
 NEXT_PUBLIC_AUTH_ENABLED=true
-NEXT_PUBLIC_WHATSAPP_API_VERSION=v18.0
 ```
 
 ### next.config.js (GitHub Pages)
@@ -304,7 +303,7 @@ basePath: '/notiflow'         // GitHub Pages path
 images: { unoptimized: true } // Para images estáticas
 ```
 
-### tailwind.config.js (Colores WhatsApp)
+### tailwind.config.js (Colores Notiflow)
 ```javascript
   primary: '#8EA6A1'   // Tono pastel suave - verde salvia
   secondary: '#C8B6A6' // Arena cálida y neutra
@@ -411,7 +410,7 @@ Tu aplicación Notiflow está **100% lista**. Puedes:
 
 1. ✅ Empezar a desarrollar ahora
 2. ✅ Conectar tu backend GCP
-3. ✅ Integrar WhatsApp API
+3. ✅ Integrar canal de entrega (email/SMS)
 4. ✅ Hacer deploy a GitHub Pages
 5. ✅ Compartir con el equipo
 6. ✅ Monetizar/Producción

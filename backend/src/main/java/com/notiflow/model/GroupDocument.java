@@ -13,16 +13,18 @@ public class GroupDocument {
     private String description;
     private List<String> memberIds;
     private String schoolId;
+    private String year;
     private Instant createdAt;
 
     public GroupDocument() {}
 
-    public GroupDocument(String id, String name, String description, List<String> memberIds, String schoolId, Instant createdAt) {
+    public GroupDocument(String id, String name, String description, List<String> memberIds, String schoolId, String year, Instant createdAt) {
         this.id = id;
         this.name = name;
         this.description = description;
         this.memberIds = memberIds;
         this.schoolId = schoolId;
+        this.year = year;
         this.createdAt = createdAt;
     }
 
@@ -64,6 +66,14 @@ public class GroupDocument {
 
     public void setSchoolId(String schoolId) {
         this.schoolId = schoolId;
+    }
+
+    public String getYear() {
+        return year;
+    }
+
+    public void setYear(String year) {
+        this.year = year;
     }
 
     public Instant getCreatedAt() {

@@ -9,6 +9,7 @@ public record GroupDto(
         String description,
         List<String> memberIds,
         String schoolId,
+        String year,
         Instant createdAt
 ) {
 }

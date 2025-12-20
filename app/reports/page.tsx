@@ -1,72 +1,113 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
+import { apiClient } from '@/lib/api-client';
+import { useAuthStore, useYearStore } from '@/store';
+
+type MessageReport = {
+  id: string;
+  content: string;
+  senderName: string;
+  createdAt?: string;
+  emailStatus?: string;
+  appStatus?: string;
+};
+
+const statusLabel = (status?: string) => {
+  const s = (status || '').toLowerCase();
+  switch (s) {
+    case 'sent':
+    case 'delivered':
+      return 'Enviado';
+    case 'failed':
+      return 'Falló';
+    case 'pending':
+      return 'Pendiente';
+    case 'read':
+      return 'Leído';
+    case 'scheduled':
+      return 'Programado';
+    case 'draft':
+      return 'Borrador';
+    default:
+      return status || '—';
+  }
+};
+
+const statusIcon = (status?: string) => {
+  const s = (status || '').toLowerCase();
+  if (s === 'sent' || s === 'delivered') {
+    return '✔';
+  }
+  if (s === 'read') {
+    return '✔✔';
+  }
+  return '';
+};
 
 export default function ReportsPage() {
-  const kpis = [
-    {
-      title: 'Mensajes enviados (semana)',
-      value: '482',
-      delta: '+12% vs. anterior',
-      tone: 'text-green-700 bg-green-50',
-    },
-    {
-      title: 'Tasa de entrega',
-      value: '98.7%',
-      delta: '+0.4pp',
-      tone: 'text-green-700 bg-green-50',
-    },
-    {
-      title: 'Programados próximos 24h',
-      value: '36',
-      delta: 'Listos para salir',
-      tone: 'text-blue-700 bg-blue-50',
-    },
-    {
-      title: 'Alcance estimado',
-      value: '3.2k',
-      delta: 'Estudiantes/notificaciones',
-      tone: 'text-gray-700 bg-gray-100',
-    },
-  ];
+  const { year } = useYearStore();
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+  const canView = hasPermission('reports.view');
+  const canCreateMessage = hasPermission('messages.create');
+  const [messages, setMessages] = useState<MessageReport[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
-  const campaigns = [
-    {
-      name: 'Aviso de pagos',
-      sent: 180,
-      delivered: '98%',
-      date: '12/01',
-      status: 'Completado',
-    },
-    {
-      name: 'Reunión de padres',
-      sent: 220,
-      delivered: '99%',
-      date: '10/01',
-      status: 'Completado',
-    },
-    {
-      name: 'Recordatorio evaluaciones',
-      sent: 140,
-      delivered: '97%',
-      date: '08/01',
-      status: 'En curso',
-    },
-  ];
+  useEffect(() => {
+    if (!canView) return;
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await apiClient.getMessages({ year });
+        setMessages(res.data || []);
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'No se pudieron cargar los mensajes';
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [canView, year]);
 
-  const performance = [
-    { label: 'Cursos (promedio entrega)', value: '99.1%' },
-    { label: 'Niveles (entrega)', value: '98.5%' },
-    { label: 'Jornadas (entrega)', value: '97.8%' },
-  ];
+  const filtered = messages.filter((m) => {
+    const term = search.toLowerCase();
+    return (
+      !term ||
+      m.content?.toLowerCase().includes(term) ||
+      m.senderName?.toLowerCase().includes(term)
+    );
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const weeklySends = [
-    { label: 'Semana 1', value: 430 },
-    { label: 'Semana 2', value: 515 },
-    { label: 'Semana 3', value: 498 },
-    { label: 'Semana 4', value: 562 },
-  ];
+  const total = filtered.length;
+  const sentEmail = messages.filter((m) => (m.emailStatus || '').toLowerCase() === 'sent').length;
+  const failedEmail = messages.filter((m) => (m.emailStatus || '').toLowerCase() === 'failed').length;
+  const appPending = messages.filter((m) => (m.appStatus || '').toLowerCase() === 'pending').length;
+  const appRead = messages.filter((m) => (m.appStatus || '').toLowerCase() === 'read').length;
 
-  const maxWeeklySend = Math.max(...weeklySends.map((w) => w.value));
+  if (!canView) {
+    return (
+      <ProtectedLayout>
+        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
+          <p className="text-gray-600">No tienes permisos para ver los reportes.</p>
+        </div>
+      </ProtectedLayout>
+    );
+  }
 
   return (
     <ProtectedLayout>
@@ -74,148 +115,145 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <p className="text-sm text-gray-500">Analítica</p>
-            <h1 className="text-4xl font-bold text-gray-900">Reportes</h1>
-            <p className="text-gray-600 mt-1">Visibilidad de envíos y entregas de mensajes informativos</p>
+            <h1 className="text-4xl font-bold text-gray-900">Reportes de Mensajes</h1>
+            <p className="text-gray-600 mt-1">Estado de entrega por canal (año {year})</p>
           </div>
-          <Link
-            href="/messages/new"
-            className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-green-700 transition-colors"
-          >
-            + Crear campaña
-          </Link>
+          {canCreateMessage && (
+            <Link
+              href="/messages/new"
+              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-green-700 transition-colors"
+            >
+              + Crear campaña
+            </Link>
+          )}
+        </div>
+
+        {error && (
+          <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Buscar por contenido o remitente"
+            className="w-full sm:w-96 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+          />
+          <div className="text-sm text-gray-600">
+            Mostrando {paginated.length} de {filtered.length} mensajes
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {kpis.map((item) => (
-            <div key={item.title} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-              <p className="text-sm text-gray-600">{item.title}</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-gray-900">{item.value}</span>
-                <span className={`text-xs font-medium px-2 py-1 rounded-full ${item.tone}`}>
-                  {item.delta}
-                </span>
-              </div>
-            </div>
-          ))}
+          <StatCard title="Mensajes (año)" value={loading ? '—' : total} />
+          <StatCard title="Email enviados" value={loading ? '—' : sentEmail} />
+          <StatCard title="Email fallidos" value={loading ? '—' : failedEmail} />
+          <StatCard title="App leídos" value={loading ? '—' : appRead} />
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Mensajes enviados (últimas 4 semanas)</h2>
-              <p className="text-sm text-gray-600">Tendencia semanal de envíos</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Máximo semanal</p>
-              <p className="text-xl font-bold text-gray-900">{maxWeeklySend}</p>
-            </div>
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="flex items-center justify-between p-4 border-b border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900">Últimos mensajes</h2>
+            <span className="text-sm text-gray-500">
+              {loading ? 'Cargando...' : `${paginated.length} mostrado(s)`}
+            </span>
           </div>
-          <div className="grid grid-cols-4 gap-4 items-end">
-            {weeklySends.map((week) => (
-              <div key={week.label} className="flex flex-col items-center gap-2">
-                <div className="w-full h-36 bg-gray-100 rounded-lg flex items-end overflow-hidden">
-                  <div
-                    className="w-full bg-primary rounded-lg transition-all"
-                    style={{ height: `${(week.value / maxWeeklySend) * 100}%` }}
-                  />
-                </div>
-                <div className="text-center space-y-0.5">
-                  <p className="text-sm font-semibold text-gray-900">{week.value}</p>
-                  <p className="text-xs text-gray-500">{week.label}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Campañas recientes</h2>
-              <span className="text-sm text-gray-500">Últimos 7 días</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-gray-50 text-left text-sm text-gray-600">
-                  <tr>
-                    <th className="px-4 py-3">Campaña</th>
-                    <th className="px-4 py-3">Enviados</th>
-                    <th className="px-4 py-3">Entregados</th>
-                    <th className="px-4 py-3">Fecha</th>
-                    <th className="px-4 py-3">Estado</th>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50 text-left text-sm text-gray-600">
+                <tr>
+                  <th className="px-4 py-3">Mensaje</th>
+                  <th className="px-4 py-3">Enviado por</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">App</th>
+                  <th className="px-4 py-3">Fecha</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 text-sm">
+                {paginated.map((m) => (
+                  <tr key={m.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900 font-medium line-clamp-2">{m.content}</td>
+                    <td className="px-4 py-3 text-gray-700">{m.senderName || '—'}</td>
+                    <td className="px-4 py-3">
+                      <Badge status={m.emailStatus || '—'} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge status={m.appStatus || '—'} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 text-sm">
-                  {campaigns.map((c) => (
-                    <tr key={c.name} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900 font-medium">{c.name}</td>
-                      <td className="px-4 py-3 text-gray-700">{c.sent}</td>
-                      <td className="px-4 py-3 text-gray-700">{c.delivered}</td>
-                      <td className="px-4 py-3 text-gray-500">{c.date}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
-                            c.status === 'En curso'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-green-100 text-green-700'
-                          }`}
-                        >
-                          {c.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 space-y-5">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Rendimiento por segmento</h2>
-              <p className="text-sm text-gray-600">Entrega por grupo</p>
-            </div>
-            <div className="space-y-4">
-              {performance.map((item) => (
-                <div key={item.label} className="border border-gray-100 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-gray-700">{item.label}</p>
-                    <span className="text-sm font-semibold text-gray-900">{item.value}</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary"
-                      style={{ width: item.value.replace('%', '') + '%' }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span className="w-3 h-3 rounded-full bg-primary" />
-              Entrega promedio por segmento
-            </div>
+                ))}
+                {!loading && !filtered.length && (
+                  <tr>
+                    <td className="px-4 py-4 text-gray-500" colSpan={5}>
+                      No hay datos de mensajes todavía.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Exportar reportes</h3>
-            <p className="text-sm text-gray-600">Descarga un CSV con entregas filtradas por rango.</p>
-          </div>
-          <div className="flex gap-3 flex-wrap">
-            <button className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors">
-              Exportar CSV
-            </button>
-            <Link
-              href="/messages"
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-            >
-              Ir a mensajes
-            </Link>
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
+          >
+            Anterior
+          </button>
+          <span className="text-sm text-gray-600">
+            Página {page} de {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-50"
+          >
+            Siguiente
+          </button>
         </div>
       </div>
     </ProtectedLayout>
+  );
+}
+
+function StatCard({ title, value }: { title: string; value: string | number }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+      <p className="text-sm text-gray-600">{title}</p>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="text-3xl font-bold text-gray-900">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function Badge({ status }: { status: string }) {
+  const s = (status || '').toLowerCase();
+  const map: Record<string, string> = {
+    sent: 'bg-green-100 text-green-700',
+    delivered: 'bg-green-100 text-green-700',
+    failed: 'bg-red-100 text-red-700',
+    pending: 'bg-yellow-100 text-yellow-700',
+    read: 'bg-blue-100 text-blue-700',
+  };
+  const cls = map[s] || 'bg-gray-100 text-gray-700';
+  return (
+    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${cls}`}>
+      <span className="mr-1">{statusIcon(status)}</span>
+      {statusLabel(status)}
+    </span>
   );
 }

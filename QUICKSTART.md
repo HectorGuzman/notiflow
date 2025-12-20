@@ -2,7 +2,7 @@
 
 ## ¿Qué es Notiflow?
 
-Una plataforma de mensajería escolar por WhatsApp que permite que directores, coordinadores y profesores se comuniquen rápidamente con estudiantes, cursos, niveles, jornadas o la escuela completa.
+Una plataforma de mensajería escolar que permite que directores, coordinadores y profesores se comuniquen rápidamente con estudiantes, cursos, niveles, jornadas o la escuela completa.
 
 ---
 
@@ -228,17 +228,15 @@ Abre DevTools (F12) en el navegador
 - [React Docs](https://react.dev)
 - [Tailwind CSS](https://tailwindcss.com/docs)
 - [Zustand](https://github.com/pmndrs/zustand)
-- [Meta WhatsApp API](https://developers.facebook.com/docs/whatsapp)
 
 ---
 
 ## 📝 Próximos Pasos
 
 1. **Conectar Backend**: Actualiza `NEXT_PUBLIC_API_URL` en `.env.local`
-2. **Configurar WhatsApp**: Obtén API token de Meta Business
-3. **Agregar Usuarios Reales**: Conecta con tu base de datos
-4. **Personalizar**: Cambia colores, logos, textos
-5. **Hacer Deploy**: Publica en GitHub Pages
+2. **Agregar Usuarios Reales**: Conecta con tu base de datos
+3. **Personalizar**: Cambia colores, logos, textos
+4. **Hacer Deploy**: Publica en GitHub Pages
 
 ---
 

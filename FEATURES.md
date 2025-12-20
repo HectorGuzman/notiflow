@@ -35,7 +35,7 @@
 - [x] Diseño responsivo (mobile, tablet, desktop)
 - [x] Navbar con usuario y logout
 - [x] Sidebar con navegación colapsable
-- [x] Paleta de colores WhatsApp-inspired
+- [x] Paleta de colores institucional
 - [x] Íconos con React Icons
 - [x] Animaciones y transiciones suaves
 
@@ -166,7 +166,7 @@
 ```
 ALTA PRIORIDAD (Hacer primero):
 1. Conectar con backend GCP real
-2. Integración WhatsApp API (v18.0)
+2. Integración email/SMS como canales de entrega
 3. Notificaciones en tiempo real
 4. Manejo de archivos
 

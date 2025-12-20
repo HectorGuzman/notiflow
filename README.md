@@ -1,8 +1,8 @@
-# Notiflow - Sistema de Mensajería Escolar por WhatsApp
+# Notiflow - Sistema de Mensajería Escolar
 
 ## 🎯 Descripción del Proyecto
 
-Notiflow es una plataforma web responsiva diseñada para facilitar la comunicación entre diferentes actores de un colegio (directores, coordinadores, profesores) y estudiantes a través de WhatsApp Business API integrada con Meta.
+Notiflow es una plataforma web responsiva diseñada para facilitar la comunicación entre diferentes actores de un colegio (directores, coordinadores, profesores) y estudiantes mediante mensajes informativos.
 
 ### Características Principales
 
@@ -11,7 +11,7 @@ Notiflow es una plataforma web responsiva diseñada para facilitar la comunicaci
 ✅ **Envío Selectivo** - A estudiantes individuales, cursos, niveles, jornadas o toda la escuela  
 ✅ **Programación de Mensajes** - Envía mensajes en horarios específicos  
 ✅ **Historial de Mensajes** - Visualiza todos los mensajes enviados  
-✅ **Integración WhatsApp** - Conecta fácilmente con Meta WhatsApp Business API  
+✅ **Envío multicanal** - Mensajes informativos a destinatarios definidos  
 ✅ **Dashboard Intuitivo** - Visualiza estadísticas y acceso rápido a funciones  
 
 ---
@@ -76,7 +76,6 @@ notiflow/
 ### Backend (GCP)
 - Hosting en Google Cloud Platform
 - API RESTful para gestionar mensajes y datos
-- Integración con Meta WhatsApp Business API
 
 ### Deployment
 - **GitHub Pages** - Hospedaje del frontend (export estático)
@@ -181,11 +180,11 @@ Ver `types/index.ts` para las interfaces completas.
 
 ## 🎨 Diseño y Estilos
 
-### Paleta de Colores (WhatsApp Inspired)
-	- **Primary**: #8EA6A1 (Tono pastel suave - verde salvia)
-	- **Secondary**: #C8B6A6 (Arena cálida y neutra)
-	- **Accent**: #EDE3D6 (Marfil suave)
-	- **Light**: #FBFAF7 (Fondo claro casi blanco)
+### Paleta de Colores (Identidad Notiflow)
+	- **Primary**: #0F766E (verde azulado)
+	- **Secondary**: #E0F2F1 (verde menta suave)
+	- **Accent**: #F5F5F5 (gris claro)
+	- **Light**: #FFFFFF (fondo claro)
 
 ### Responsividad
 - Mobile-first approach
@@ -204,7 +203,6 @@ Ver `types/index.ts` para las interfaces completas.
 - [ ] Multiidioma
 - [ ] Modo oscuro
 - [ ] Sincronización con sistemas de SIS (Student Information System)
-- [ ] API WebHooks de WhatsApp para recibir mensajes
 
 ---
 

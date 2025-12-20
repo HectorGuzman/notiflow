@@ -1,0 +1,19 @@
+steps:
+  # Build backend image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', 'us-central1-docker.pkg.dev/notiflow-480919/notiflow-repo/notiflow-backend',
+      '.'
+    ]
+
+images:
+  - 'us-central1-docker.pkg.dev/notiflow-480919/notiflow-repo/notiflow-backend'
+
+substitutions:
+  _REGION: 'us-central1'
+  _SERVICE: 'notiflow-backend'
+  _REPO: 'notiflow-repo'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -206,7 +206,6 @@ Response 200:
 {
   "id": "school-1",
   "name": "Colegio Ejemplo",
-  "whatsappPhoneNumber": "+34612345678",
   "address": "Calle Principal 123",
   "city": "Madrid",
   "country": "España",
@@ -433,8 +432,8 @@ router.post('/send', authenticate, async (req, res) => {
       createdAt: new Date()
     });
 
-    // Enviar a WhatsApp API
-    await sendToWhatsApp(message, recipients);
+    // Envía usando tu canal elegido (email, SMS, push, etc.)
+    await sendNotification(message, recipients);
 
     res.json({ id: message.id, status: 'sent' });
   } catch (error) {
@@ -455,11 +454,6 @@ FIRESTORE_PROJECT_ID=tu-proyecto-gcp
 FIRESTORE_PRIVATE_KEY=...
 FIRESTORE_CLIENT_EMAIL=...
 
-# WhatsApp
-WHATSAPP_API_VERSION=v18.0
-WHATSAPP_PHONE_NUMBER_ID=...
-WHATSAPP_API_TOKEN=...
-
 # JWT
 JWT_SECRET=tu-super-secreto
 JWT_EXPIRY=24h
@@ -478,7 +472,7 @@ SENDGRID_API_KEY=...
 - [ ] Crear endpoints de autenticación
 - [ ] Implementar validación de JWT
 - [ ] Crear modelo de Message en Firestore
-- [ ] Implementar lógica de envío a WhatsApp
+- [ ] Implementar lógica de entrega (email/SMS/push)
 - [ ] Crear endpoints de gestión de mensajes
 - [ ] Crear endpoints de datos escolares
 - [ ] Agregar manejo de errores
@@ -488,4 +482,4 @@ SENDGRID_API_KEY=...
 
 ---
 
-**Para más ayuda**, consulta la [documentación de WhatsApp Business API](https://developers.facebook.com/docs/whatsapp/cloud-api)
+**Para más ayuda**, consulta la documentación del proveedor de entrega que elijas (SendGrid, Twilio, etc.)

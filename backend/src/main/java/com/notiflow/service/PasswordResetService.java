@@ -39,6 +39,10 @@ public class PasswordResetService {
     }
 
     public PasswordResetResult createResetToken(String email) {
+        return createResetToken(email, true);
+    }
+
+    public PasswordResetResult createResetToken(String email, boolean sendEmail) {
         Optional<UserDocument> userOpt = userService.findByEmail(email.toLowerCase());
         if (userOpt.isEmpty()) {
             throw new IllegalArgumentException("Usuario no encontrado");
@@ -51,7 +55,10 @@ public class PasswordResetService {
 
         try {
             firestore.collection("passwordResets").document(doc.getToken()).set(doc).get();
-            boolean emailed = emailService.sendPasswordResetEmail(doc.getEmail(), doc.getToken(), doc.getExpiresAt());
+            boolean emailed = false;
+            if (sendEmail) {
+                emailed = emailService.sendPasswordResetEmail(doc.getEmail(), doc.getToken(), doc.getExpiresAt());
+            }
             return new PasswordResetResult(doc.getToken(), doc.getExpiresAt(), emailed);
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();

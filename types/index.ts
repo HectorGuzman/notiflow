@@ -1,4 +1,10 @@
-export type UserRole = 'admin' | 'director' | 'coordinator' | 'teacher' | 'student';
+export type UserRole =
+  | 'superadmin'
+  | 'admin'
+  | 'director'
+  | 'coordinator'
+  | 'teacher'
+  | 'student';
 
 export interface User {
   id: string;
@@ -8,6 +14,7 @@ export interface User {
   schoolId: string;
   schoolName?: string;
   profileImage?: string;
+  permissions?: string[];
 }
 
 export interface Message {
@@ -57,8 +64,6 @@ export interface Level {
 export interface SchoolConfig {
   id: string;
   name: string;
-  whatsappApiKey: string;
-  whatsappPhoneNumber: string;
   levels: Level[];
   adminUsers: User[];
 }

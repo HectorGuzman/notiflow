@@ -7,6 +7,9 @@ import java.util.List;
 
 public record MessageRequest(
         @NotBlank String content,
-        @NotEmpty List<String> recipients
+        @NotEmpty List<String> recipients,
+        List<String> channels,
+        String year,
+        String schoolId
 ) {
 }
