@@ -1,6 +1,7 @@
 package com.notiflow.dto;
 
 import com.notiflow.model.MessageStatus;
+import com.notiflow.model.AttachmentMetadata;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,6 +18,8 @@ public record MessageDto(
         String schoolId,
         String year,
         MessageStatus status,
-        Instant createdAt
+        Instant createdAt,
+        List<AttachmentMetadata> attachments,
+        String reason
 ) {
 }

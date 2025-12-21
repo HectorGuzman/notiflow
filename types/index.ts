@@ -14,6 +14,7 @@ export interface User {
   schoolId: string;
   schoolName?: string;
   profileImage?: string;
+  rut?: string;
   permissions?: string[];
 }
 

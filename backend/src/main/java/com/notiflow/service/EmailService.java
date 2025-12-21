@@ -5,8 +5,10 @@ import com.sendgrid.Request;
 import com.sendgrid.Response;
 import com.sendgrid.SendGrid;
 import com.sendgrid.helpers.mail.Mail;
-import com.sendgrid.helpers.mail.objects.Content;
+import com.notiflow.dto.AttachmentRequest;
 import com.sendgrid.helpers.mail.objects.Email;
+import com.sendgrid.helpers.mail.objects.Attachments;
+import com.sendgrid.helpers.mail.objects.Content;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +18,9 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
+import java.util.List;
+import java.util.Objects;
 
 @Service
 public class EmailService {
@@ -88,17 +93,36 @@ public class EmailService {
         }
     }
 
-    public boolean sendMessageEmail(String to, String subject, String body) {
+    public boolean sendMessageEmail(String to, String subject, String htmlBody, String textBody, List<AttachmentRequest> attachments) {
         if (!enabled) {
             log.warn("SendGrid no configurado; se omite envío a {}", to);
             return false;
         }
-        Mail mail = new Mail(
-            new Email(senderEmail, "Notiflow"),
-            subject,
-            new Email(to),
-            new Content("text/plain", body)
-        );
+        Mail mail = new Mail();
+        mail.setFrom(new Email(senderEmail, "Notiflow"));
+        mail.setSubject(subject);
+        mail.setTemplateId(null);
+        mail.setReplyTo(new Email(senderEmail));
+        mail.addPersonalization(new com.sendgrid.helpers.mail.objects.Personalization());
+        mail.getPersonalization().get(0).addTo(new Email(to));
+        mail.addContent(new Content("text/plain", textBody != null ? textBody : stripHtml(htmlBody)));
+        mail.addContent(new Content("text/html", htmlBody));
+
+        if (attachments != null && !attachments.isEmpty()) {
+            for (AttachmentRequest att : attachments) {
+                if (att == null || att.base64() == null || att.fileName() == null) continue;
+                Attachments sgAtt = new Attachments();
+                sgAtt.setFilename(att.fileName());
+                sgAtt.setType(att.mimeType());
+                sgAtt.setDisposition(Boolean.TRUE.equals(att.inline()) ? "inline" : "attachment");
+                if (Boolean.TRUE.equals(att.inline()) && att.cid() != null) {
+                    sgAtt.setContentId(att.cid());
+                }
+                sgAtt.setContent(att.base64());
+                mail.addAttachments(sgAtt);
+            }
+        }
+
         Request request = new Request();
         try {
             request.setMethod(Method.POST);
@@ -116,6 +140,11 @@ public class EmailService {
             log.error("No se pudo enviar correo a {}", to, e);
             return false;
         }
+    }
+
+    private String stripHtml(String html) {
+        if (html == null) return "";
+        return html.replaceAll("<[^>]*>", "").replace("&nbsp;", " ");
     }
 
     public boolean isEnabled() {

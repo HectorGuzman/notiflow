@@ -8,6 +8,7 @@ public record UserDto(
         String email,
         UserRole role,
         String schoolId,
-        String schoolName
+        String schoolName,
+        String rut
 ) {
 }

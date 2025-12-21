@@ -77,11 +77,15 @@ public class UserService {
         }
     }
 
-    public List<UserDto> listAll(int page, int pageSize) {
+    public List<UserDto> listAll(int page, int pageSize, String schoolId, boolean isGlobal) {
         try {
             int safePage = Math.max(1, page);
             int safeSize = Math.min(Math.max(1, pageSize), 100);
-            ApiFuture<QuerySnapshot> query = firestore.collection("users")
+            com.google.cloud.firestore.Query queryRef = firestore.collection("users");
+            if (!isGlobal && schoolId != null && !schoolId.isBlank()) {
+                queryRef = queryRef.whereEqualTo("schoolId", schoolId);
+            }
+            ApiFuture<QuerySnapshot> query = queryRef
                     .orderBy("name")
                     .offset((safePage - 1) * safeSize)
                     .limit(safeSize)
@@ -96,7 +100,8 @@ public class UserService {
                         u.getEmail(),
                         u.getRole(),
                         u.getSchoolId(),
-                        u.getSchoolName()
+                        u.getSchoolName(),
+                        u.getRut()
                 );
             }).collect(Collectors.toList());
         } catch (InterruptedException | ExecutionException e) {
@@ -113,6 +118,7 @@ public class UserService {
         doc.setRole(request.role());
         doc.setSchoolId(request.schoolId());
         doc.setSchoolName(request.schoolName());
+        doc.setRut(request.rut());
         UserDocument saved = upsert(doc);
         // Enviar correo de bienvenida con link de reseteo
         try {
@@ -130,7 +136,8 @@ public class UserService {
                 saved.getEmail(),
                 saved.getRole(),
                 saved.getSchoolId(),
-                saved.getSchoolName()
+                saved.getSchoolName(),
+                saved.getRut()
         );
     }
 }

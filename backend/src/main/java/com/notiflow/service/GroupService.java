@@ -71,6 +71,13 @@ public class GroupService {
             String msg = fe.getMessage() != null ? fe.getMessage().toLowerCase() : "";
             return "failed_precondition".equalsIgnoreCase(code) && msg.contains("index");
         }
+        if (ex instanceof io.grpc.StatusRuntimeException sre) {
+            String code = sre.getStatus() != null && sre.getStatus().getCode() != null
+                    ? sre.getStatus().getCode().name()
+                    : "";
+            String msg = sre.getMessage() != null ? sre.getMessage().toLowerCase() : "";
+            return "failed_precondition".equalsIgnoreCase(code) && msg.contains("index");
+        }
         return false;
     }
 

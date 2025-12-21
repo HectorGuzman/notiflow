@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const canCreateMessage = hasPermission('messages.create');
   const canSeeMessages = hasPermission('messages.list');
   const canSeeReports = hasPermission('reports.view');
+  const canSeeUsers = hasPermission('users.list');
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,10 +24,9 @@ export default function DashboardPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const [msgRes, usrRes] = await Promise.all([
-          apiClient.getMessages({ year }),
-          apiClient.getUsers(),
-        ]);
+        const msgPromise = apiClient.getMessages({ year });
+        const usrPromise = canSeeUsers ? apiClient.getUsers() : Promise.resolve({ data: [] });
+        const [msgRes, usrRes] = await Promise.all([msgPromise, usrPromise]);
         setMessages(msgRes.data || []);
         setUsers(usrRes.data || []);
       } catch {
@@ -36,15 +36,21 @@ export default function DashboardPage() {
       }
     };
     load();
-  }, [year]);
+  }, [year, canSeeUsers]);
 
   const stats = useMemo(
-    () => [
-      { label: 'Mensajes del año', value: messages.length },
-      { label: 'Usuarios', value: users.length },
-      { label: 'Admins', value: users.filter((u) => (u.role || '').toLowerCase() === 'admin').length },
-    ],
-    [messages.length, users]
+    () => {
+      const base = [{ label: 'Mensajes del año', value: messages.length }];
+      if (canSeeUsers) {
+        base.push({ label: 'Usuarios', value: users.length });
+        base.push({
+          label: 'Admins',
+          value: users.filter((u) => (u.role || '').toLowerCase() === 'admin').length,
+        });
+      }
+      return base;
+    },
+    [messages.length, users, canSeeUsers]
   );
 
   const quickActions = [
@@ -95,7 +101,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className={`grid grid-cols-1 gap-6 ${stats.length >= 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
           {stats.map((stat, idx) => (
             <div key={idx} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
               <p className="text-gray-600 text-sm font-medium">{stat.label}</p>

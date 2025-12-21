@@ -56,7 +56,8 @@ public class AuthService {
                 doc.getEmail(),
                 doc.getRole(),
                 doc.getSchoolId(),
-                doc.getSchoolName()
+                doc.getSchoolName(),
+                doc.getRut()
         );
 
         Map<String, Object> claims = new java.util.HashMap<>();
@@ -64,6 +65,9 @@ public class AuthService {
         claims.put("name", user.name());
         claims.put("schoolId", user.schoolId());
         claims.put("schoolName", user.schoolName());
+        if (user.rut() != null) {
+            claims.put("rut", user.rut());
+        }
         // Opcional: incluir permisos en el token (útil para UI)
         try {
             Set<String> perms = accessControlService != null ? accessControlService.getPermissions(user.role().name()) : Set.of();

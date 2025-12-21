@@ -32,7 +32,8 @@ public class UserController {
     ) {
         CurrentUser user = CurrentUser.fromContext().orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
         accessControlService.check(user, "users.list", user.schoolId(), Optional.empty());
-        return ResponseEntity.ok(userService.listAll(page, pageSize));
+        String schoolId = user.schoolId();
+        return ResponseEntity.ok(userService.listAll(page, pageSize, schoolId, user.isGlobalAdmin()));
     }
 
     @PostMapping

@@ -12,6 +12,16 @@ public record CurrentUser(String email, String role, String schoolId, String sch
         return role != null && "*".equals(role);
     }
 
+    public boolean isGlobalAdmin() {
+        return role != null && role.equalsIgnoreCase("SUPERADMIN");
+    }
+
+    public boolean hasSchoolScope(String targetSchoolId) {
+        if (isGlobalAdmin()) return true;
+        if (targetSchoolId == null || targetSchoolId.isBlank()) return false;
+        return targetSchoolId.equalsIgnoreCase(this.schoolId);
+    }
+
     public static Optional<CurrentUser> fromContext() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {

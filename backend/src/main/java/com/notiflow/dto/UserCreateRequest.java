@@ -11,6 +11,7 @@ public record UserCreateRequest(
         @NotNull UserRole role,
         @NotBlank String schoolId,
         @NotBlank String schoolName,
-        @NotBlank String password
+        @NotBlank String password,
+        @NotBlank String rut
 ) {
 }

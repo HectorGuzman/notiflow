@@ -31,15 +31,14 @@ export const Header: React.FC = () => {
     hasPermission('students.create') ||
     hasPermission('students.update') ||
     hasPermission('students.delete');
+  // Solo mostramos gestión de grupos si puede crearlos/editar/borrar (no solo listar)
   const canManageGroups =
-    hasPermission('groups.list') ||
     hasPermission('groups.create') ||
     hasPermission('groups.update') ||
     hasPermission('groups.delete');
   const canSeeManagement = canManageStudents || canManageGroups;
   const canSeeReports = hasPermission('reports.view');
   const canSeeSettings =
-    hasPermission('users.list') ||
     hasPermission('users.create') ||
     hasPermission('users.delete') ||
     hasPermission('schools.manage');

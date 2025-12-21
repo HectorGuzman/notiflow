@@ -181,10 +181,18 @@ export default function ReportsPage() {
                     <td className="px-4 py-3 text-gray-900 font-medium line-clamp-2">{m.content}</td>
                     <td className="px-4 py-3 text-gray-700">{m.senderName || '—'}</td>
                     <td className="px-4 py-3">
-                      <Badge status={m.emailStatus || '—'} />
+                      {Array.isArray((m as any).channels) && (m as any).channels.includes('email') ? (
+                        <Badge status={m.emailStatus || '—'} />
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge status={m.appStatus || '—'} />
+                      {Array.isArray((m as any).channels) && (m as any).channels.includes('app') ? (
+                        <Badge status={m.appStatus || '—'} />
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {m.createdAt ? new Date(m.createdAt).toLocaleString() : '—'}

@@ -8,7 +8,7 @@ class APIClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 10000,
+      timeout: 20000, // aumentamos timeout para conexiones lentas a Cloud Run
       headers: {
         'Content-Type': 'application/json',
       },
@@ -50,7 +50,21 @@ class APIClient {
   }
 
   // Mensajes
-  async sendMessage(data: any) {
+  async sendMessage(data: {
+    content: string;
+    recipients: string[];
+    channels: string[];
+    scheduleAt?: string;
+    year?: string;
+    reason?: string;
+    attachments?: {
+      fileName: string;
+      mimeType: string;
+      base64: string;
+      inline?: boolean;
+      cid?: string;
+    }[];
+  }) {
     return this.client.post('/messages', data);
   }
 
@@ -119,6 +133,7 @@ class APIClient {
     schoolId: string;
     schoolName: string;
     password: string;
+    rut: string;
   }) {
     return this.client.post('/users', data);
   }

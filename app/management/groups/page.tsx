@@ -32,8 +32,8 @@ type SchoolItem = {
 export default function GroupsPage() {
   const user = useAuthStore((state) => state.user);
   const hasPermission = useAuthStore((state) => state.hasPermission);
+  // Acceso sólo si puede crear/editar/borrar grupos (listar por sí solo no muestra la sección)
   const canManageGroups =
-    hasPermission('groups.list') ||
     hasPermission('groups.create') ||
     hasPermission('groups.update') ||
     hasPermission('groups.delete');

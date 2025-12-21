@@ -31,7 +31,8 @@ public class DataInitializer {
                                     UserRole.ADMIN,
                                     schoolIdFinal,
                                     "Colegios",
-                                    passwordFinal
+                                    passwordFinal,
+                                    "11111111-1"
                             )
                     );
                     return null;

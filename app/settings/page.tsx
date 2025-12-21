@@ -15,6 +15,7 @@ type UserListItem = {
   role: string;
   schoolId: string;
   schoolName?: string;
+  rut?: string;
 };
 
 type SchoolItem = {
@@ -28,7 +29,6 @@ export default function SettingsPage() {
   const user = useAuthStore((state) => state.user);
   const hasPermission = useAuthStore((state) => state.hasPermission);
   const canManageUsers =
-    hasPermission('users.list') ||
     hasPermission('users.create') ||
     hasPermission('users.delete');
   const canManageSchools = hasPermission('schools.manage');
@@ -49,6 +49,7 @@ export default function SettingsPage() {
     password: '',
     schoolId: '',
     schoolName: '',
+    rut: '',
   });
   const [schoolForm, setSchoolForm] = useState({
     id: '',
@@ -65,7 +66,7 @@ export default function SettingsPage() {
     rows: 0,
   });
   const [csvData, setCsvData] = useState<
-    { name: string; email: string; role: string; password: string }[]
+    { name: string; email: string; role: string; password: string; rut: string }[]
   >([]);
   const [savingUser, setSavingUser] = useState(false);
   const [savingSchool, setSavingSchool] = useState(false);
@@ -83,6 +84,24 @@ export default function SettingsPage() {
     ],
     []
   );
+
+  const formatRut = (value: string) => {
+    const clean = value.replace(/[^0-9kK]/g, '').toUpperCase();
+    if (!clean) return '';
+    const body = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+    const withDots = body
+      .split('')
+      .reverse()
+      .reduce<string[]>((acc, curr, idx) => {
+        if (idx !== 0 && idx % 3 === 0) acc.push('.');
+        acc.push(curr);
+        return acc;
+      }, [])
+      .reverse()
+      .join('');
+    return `${withDots}-${dv}`;
+  };
 
   useEffect(() => {
     if (!canAccessSettings) return;
@@ -208,9 +227,10 @@ export default function SettingsPage() {
       email: headers.indexOf('email'),
       role: headers.indexOf('role'),
       password: headers.indexOf('password'),
+      rut: headers.indexOf('rut'),
     };
-    if (idx.name === -1 || idx.email === -1 || idx.role === -1 || idx.password === -1) {
-      throw new Error('CSV debe tener columnas: name,email,role,password');
+    if (idx.name === -1 || idx.email === -1 || idx.role === -1 || idx.password === -1 || idx.rut === -1) {
+      throw new Error('CSV debe tener columnas: name,email,role,password,rut');
     }
     return rows.map((row) => {
       const cols = row.split(',').map((c) => c.trim());
@@ -219,6 +239,7 @@ export default function SettingsPage() {
         email: cols[idx.email] || '',
         role: cols[idx.role] || 'TEACHER',
         password: cols[idx.password] || '',
+        rut: cols[idx.rut] || '',
       };
     });
   };
@@ -264,12 +285,13 @@ export default function SettingsPage() {
         }
       }
       for (const row of csvData) {
-        if (!row.email || !row.password || !row.name) continue;
+        if (!row.email || !row.password || !row.name || !row.rut) continue;
         await apiClient.createUser({
           name: row.name,
           email: row.email,
           role: row.role || 'TEACHER',
           password: row.password,
+          rut: row.rut,
           schoolId,
           schoolName: schoolName || 'Colegio',
         });
@@ -323,7 +345,8 @@ export default function SettingsPage() {
         u.name?.toLowerCase().includes(term) ||
         u.email?.toLowerCase().includes(term) ||
         u.role?.toLowerCase().includes(term) ||
-        u.schoolName?.toLowerCase().includes(term)
+        u.schoolName?.toLowerCase().includes(term) ||
+        u.rut?.toLowerCase().includes(term)
     );
   }, [userSearch, users]);
 
@@ -345,12 +368,17 @@ export default function SettingsPage() {
         setError('Selecciona una escuela');
         return;
       }
+      if (!userForm.rut) {
+        setError('Ingresa el RUT');
+        return;
+      }
 
       await apiClient.createUser({
         name: userForm.name,
         email: userForm.email,
         role: userForm.role,
         password: userForm.password,
+        rut: userForm.rut,
         schoolId,
         schoolName: schoolName || 'Colegio',
       });
@@ -359,6 +387,7 @@ export default function SettingsPage() {
         email: '',
         role: 'TEACHER',
         password: '',
+        rut: '',
         schoolId: isGlobalAdmin ? '' : schoolId,
         schoolName: isGlobalAdmin ? '' : schoolName,
       });
@@ -444,21 +473,37 @@ export default function SettingsPage() {
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={userForm.email}
-                      onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-                    <select
-                      value={userForm.role}
-                      onChange={(e) => setUserForm((prev) => ({ ...prev, role: e.target.value }))}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">RUT</label>
+                  <input
+                    type="text"
+                    value={userForm.rut}
+                    onChange={(e) =>
+                      setUserForm((prev) => ({
+                        ...prev,
+                        rut: formatRut(e.target.value),
+                      }))
+                    }
+                    placeholder="12.345.678-9"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+                  <select
+                    value={userForm.role}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, role: e.target.value }))}
                       className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 bg-white"
                     >
                       {availableRoles.map((r) => (
@@ -553,6 +598,7 @@ export default function SettingsPage() {
                       <tr className="bg-gray-50 text-left text-gray-600">
                         <th className="px-3 py-2">Nombre</th>
                         <th className="px-3 py-2">Email</th>
+                        <th className="px-3 py-2">RUT</th>
                         <th className="px-3 py-2">Rol</th>
                         <th className="px-3 py-2">Colegio</th>
                         <th className="px-3 py-2 text-right">Acciones</th>
@@ -563,6 +609,7 @@ export default function SettingsPage() {
                         <tr key={u.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-medium text-gray-900">{u.name}</td>
                           <td className="px-3 py-2 text-gray-700">{u.email}</td>
+                          <td className="px-3 py-2 text-gray-700">{u.rut || '—'}</td>
                           <td className="px-3 py-2 text-gray-700">{u.role}</td>
                           <td className="px-3 py-2 text-gray-700">
                             {u.schoolName || u.schoolId}

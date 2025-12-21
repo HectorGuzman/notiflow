@@ -12,11 +12,12 @@ public class UserDocument {
     private UserRole role;
     private String schoolId;
     private String schoolName;
+    private String rut;
 
     public UserDocument() {
     }
 
-    public UserDocument(String id, String name, String email, String passwordHash, UserRole role, String schoolId, String schoolName) {
+    public UserDocument(String id, String name, String email, String passwordHash, UserRole role, String schoolId, String schoolName, String rut) {
         this.id = id;
         this.name = name;
         this.email = email;
@@ -24,6 +25,7 @@ public class UserDocument {
         this.role = role;
         this.schoolId = schoolId;
         this.schoolName = schoolName;
+        this.rut = rut;
     }
 
     public String getId() {
@@ -80,5 +82,13 @@ public class UserDocument {
 
     public void setSchoolName(String schoolName) {
         this.schoolName = schoolName;
+    }
+
+    public String getRut() {
+        return rut;
+    }
+
+    public void setRut(String rut) {
+        this.rut = rut;
     }
 }

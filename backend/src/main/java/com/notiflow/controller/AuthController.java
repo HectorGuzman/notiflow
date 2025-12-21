@@ -53,7 +53,8 @@ public class AuthController {
                 claims.getSubject(),
                 UserRole.valueOf(claims.get("role", String.class)),
                 claims.get("schoolId", String.class),
-                claims.get("schoolName", String.class)
+                claims.get("schoolName", String.class),
+                claims.get("rut", String.class)
         );
 
         return ResponseEntity.ok(user);

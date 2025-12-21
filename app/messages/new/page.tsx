@@ -32,6 +32,7 @@ export default function NewMessagePage() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [sendMode, setSendMode] = useState<'now' | 'schedule'>('now');
   const [scheduleAt, setScheduleAt] = useState('');
+  const [reason, setReason] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [search, setSearch] = useState('');
@@ -45,6 +46,7 @@ export default function NewMessagePage() {
   const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState('');
   const [sendSuccess, setSendSuccess] = useState('');
+  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
   useEffect(() => {
     if (!canCreate) return;
@@ -86,7 +88,18 @@ export default function NewMessagePage() {
     loadGroups();
   }, [canCreate, year]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = reader.result as string;
+        resolve(res.includes(',') ? res.split(',')[1] : res);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
     const emails = users
@@ -105,6 +118,48 @@ export default function NewMessagePage() {
       setSendError('Selecciona fecha y hora para programar.');
       return;
     }
+
+    const attachments: {
+      fileName: string;
+      mimeType: string;
+      base64: string;
+      inline?: boolean;
+      cid?: string;
+    }[] = [];
+
+    try {
+      if (attachedFile) {
+        if (attachedFile.size > MAX_ATTACHMENT_BYTES) {
+          setSendError('La imagen supera los 10MB permitidos.');
+          return;
+        }
+        const base64 = await fileToBase64(attachedFile);
+        attachments.push({
+          fileName: attachedFile.name,
+          mimeType: attachedFile.type || 'image/*',
+          base64,
+          inline: true,
+          cid: 'inline-image-1',
+        });
+      }
+      if (docFile) {
+        if (docFile.size > MAX_ATTACHMENT_BYTES) {
+          setSendError('El documento supera los 10MB permitidos.');
+          return;
+        }
+        const base64 = await fileToBase64(docFile);
+        attachments.push({
+          fileName: docFile.name,
+          mimeType: docFile.type || 'application/octet-stream',
+          base64,
+          inline: false,
+        });
+      }
+    } catch (err) {
+      setSendError('No se pudieron procesar los adjuntos.');
+      return;
+    }
+
     setSendLoading(true);
     setSendError('');
     setSendSuccess('');
@@ -115,6 +170,8 @@ export default function NewMessagePage() {
         channels,
         scheduleAt: sendMode === 'schedule' ? scheduleAt : undefined,
         year,
+        reason,
+        attachments,
       })
       .then((res) => {
         const status = res?.data?.status || res?.data?.messageStatus || '';
@@ -128,6 +185,8 @@ export default function NewMessagePage() {
         setMessageContent('');
         setScheduleAt('');
         setAttachedFile(null);
+        setDocFile(null);
+        setReason('');
       })
       .catch((err: any) => {
         const msg =
@@ -371,6 +430,19 @@ export default function NewMessagePage() {
                     I
                   </button>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Motivo del mensaje
+                </label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Ej: Aviso de reunión, Comunicado general"
+                  className="w-full px-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 bg-white hover:border-gray-300"
+                  required
+                />
               </div>
               <textarea
                 placeholder="Escribe tu mensaje aquí..."

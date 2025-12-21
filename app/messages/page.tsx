@@ -17,6 +17,7 @@ type MessageItem = {
   appStatus?: string;
   status: string;
   createdAt: string;
+  attachments?: { fileName: string; mimeType?: string; downloadUrl?: string; inline?: boolean }[];
 };
 
 const statusLabel = (status?: string) => {
@@ -181,6 +182,29 @@ export default function MessagesPage() {
                   <tr key={message.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-gray-900">
                       <p className="line-clamp-2">{message.content}</p>
+                      {Array.isArray(message.attachments) && message.attachments.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs font-semibold text-gray-700">Adjuntos:</p>
+                          {message.attachments.map((att) => (
+                            <div key={att.fileName} className="text-xs text-primary flex items-center gap-1">
+                              <span>📎</span>
+                              {att.downloadUrl ? (
+                                <a
+                                  className="hover:underline break-all"
+                                  href={att.downloadUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {att.fileName}
+                                </a>
+                              ) : (
+                                <span className="break-all">{att.fileName}</span>
+                              )}
+                              {att.mimeType && <span className="text-gray-400">({att.mimeType})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-700">
                       <div className="flex flex-col">
@@ -191,8 +215,9 @@ export default function MessagesPage() {
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {message.recipientsText || '—'}
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <div className="space-y-1">
+                  <td className="px-6 py-4 text-sm">
+                    <div className="space-y-1">
+                      {Array.isArray(message.channels) && message.channels.includes('email') && (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">Email</span>
                           <span
@@ -201,15 +226,17 @@ export default function MessagesPage() {
                                 ? 'bg-green-100 text-green-700'
                                 : (message.emailStatus || message.status || '').toLowerCase() === 'pending'
                                   ? 'bg-yellow-100 text-yellow-700'
-                                : (message.emailStatus || message.status || '').toLowerCase() === 'failed'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-gray-100 text-gray-700'
+                                  : (message.emailStatus || message.status || '').toLowerCase() === 'failed'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             <span className="mr-1">{statusIcon(message.emailStatus || message.status)}</span>
                             {statusLabel(message.emailStatus || message.status)}
                           </span>
                         </div>
+                      )}
+                      {Array.isArray(message.channels) && message.channels.includes('app') && (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">App</span>
                           <span
@@ -220,20 +247,19 @@ export default function MessagesPage() {
                                   ? 'bg-green-100 text-green-700'
                                   : (message.appStatus || 'pending').toLowerCase() === 'pending'
                                     ? 'bg-yellow-100 text-yellow-700'
-                                : (message.appStatus || 'pending').toLowerCase() === 'failed'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-gray-100 text-gray-700'
+                                  : (message.appStatus || 'pending').toLowerCase() === 'failed'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             <span className="mr-1">{statusIcon(message.appStatus || 'pending')}</span>
                             {statusLabel(message.appStatus || 'pending')}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500">
-                          Canales: {message.channelsText || '—'}
-                        </p>
-                      </div>
-                    </td>
+                      )}
+                      <p className="text-xs text-gray-500">Canales: {message.channelsText || '—'}</p>
+                    </div>
+                  </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {message.createdText || '—'}
                     </td>

@@ -26,15 +26,14 @@ export const Sidebar: React.FC = () => {
     hasPermission('students.create') ||
     hasPermission('students.update') ||
     hasPermission('students.delete');
+  // Solo mostramos gestión si puede crear/editar/borrar grupos (no solo listarlos)
   const canManageGroups =
-    hasPermission('groups.list') ||
     hasPermission('groups.create') ||
     hasPermission('groups.update') ||
     hasPermission('groups.delete');
   const canSeeManagement = canManageStudents || canManageGroups;
   const canSeeReports = hasPermission('reports.view');
   const canSeeSettings =
-    hasPermission('users.list') ||
     hasPermission('users.create') ||
     hasPermission('users.delete') ||
     hasPermission('schools.manage');

@@ -10,6 +10,8 @@ public record MessageRequest(
         @NotEmpty List<String> recipients,
         List<String> channels,
         String year,
-        String schoolId
+        String schoolId,
+        String reason,
+        List<AttachmentRequest> attachments
 ) {
 }

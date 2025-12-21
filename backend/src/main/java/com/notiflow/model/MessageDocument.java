@@ -21,6 +21,8 @@ public class MessageDocument {
     private String year;
     private MessageStatus status;
     private Instant createdAt;
+    private List<AttachmentMetadata> attachments;
+    private String reason;
 
     public MessageDocument() {
     }
@@ -143,5 +145,21 @@ public class MessageDocument {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public List<AttachmentMetadata> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(List<AttachmentMetadata> attachments) {
+        this.attachments = attachments;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
     }
 }
