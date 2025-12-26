@@ -32,6 +32,7 @@ export default function SettingsPage() {
     hasPermission('users.create') ||
     hasPermission('users.delete');
   const canManageSchools = hasPermission('schools.manage');
+  const canManageAi = canManageSchools;
   const canAccessSettings = canManageUsers || canManageSchools;
   const canDeleteUsers = hasPermission('users.delete');
   const canCreateUsers = hasPermission('users.create');
@@ -74,6 +75,22 @@ export default function SettingsPage() {
   const [userSearch, setUserSearch] = useState('');
   const [userToDelete, setUserToDelete] = useState<UserListItem | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
+  const [aiPolicy, setAiPolicy] = useState({
+    rewritePrompt: '',
+    moderationRules: '',
+    updatedBy: '',
+    updatedAt: '',
+  });
+  const [loadingAi, setLoadingAi] = useState(false);
+  const [savingAi, setSavingAi] = useState(false);
+  const defaultRewritePrompt = `Mejora la redacción del siguiente mensaje manteniendo el significado.
+Adáptalo a un tono {tone}, claro y respetuoso. Devuelve solo el texto mejorado sin marcas adicionales.
+Mensaje original:
+{texto}`;
+  const defaultRules = `Discurso de odio o racismo
+Política partidista
+Violencia o acoso
+Información sensible no académica`;
 
   const availableRoles = useMemo(
     () => [
@@ -100,7 +117,7 @@ export default function SettingsPage() {
       }, [])
       .reverse()
       .join('');
-    return `${withDots}-${dv}`;
+  return `${withDots}-${dv}`;
   };
 
   useEffect(() => {
@@ -111,7 +128,10 @@ export default function SettingsPage() {
     if (canManageSchools) {
       loadSchools();
     }
-  }, [canAccessSettings, canManageSchools, canManageUsers]);
+    if (canManageAi) {
+      loadAiPolicy();
+    }
+  }, [canAccessSettings, canManageSchools, canManageUsers, canManageAi]);
 
   useEffect(() => {
     if (!canManageUsers) return;
@@ -140,6 +160,55 @@ export default function SettingsPage() {
       setError(msg);
     } finally {
       setLoadingUsers(false);
+    }
+  };
+
+  const loadAiPolicy = async () => {
+    setLoadingAi(true);
+    setError('');
+    try {
+      const res = await apiClient.getAiPolicy();
+      const data = res.data;
+      setAiPolicy({
+        rewritePrompt: data.rewritePrompt || defaultRewritePrompt,
+        moderationRules: (data.moderationRules || []).join('\n') || defaultRules,
+        updatedBy: data.updatedBy || '',
+        updatedAt: data.updatedAt || '',
+      });
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo cargar la política de IA';
+      setError(msg);
+    } finally {
+      setLoadingAi(false);
+    }
+  };
+
+  const handleSaveAi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingAi(true);
+    setError('');
+    try {
+      const rulesArr = aiPolicy.moderationRules
+        .split('\n')
+        .map((r) => r.trim())
+        .filter(Boolean);
+      await apiClient.updateAiPolicy({
+        rewritePrompt: aiPolicy.rewritePrompt,
+        moderationRules: rulesArr,
+      });
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo guardar la política de IA';
+      setError(msg);
+    } finally {
+      setSavingAi(false);
     }
   };
 
@@ -813,6 +882,77 @@ export default function SettingsPage() {
           )}
 
         </div>
+
+        {canManageAi && (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Política de IA</h2>
+                <p className="text-sm text-gray-600">
+                  Define cómo la IA reescribe mensajes y qué reglas usa para moderar contenido.
+                </p>
+              </div>
+              {loadingAi && <span className="text-xs text-gray-500">Cargando...</span>}
+            </div>
+            <form className="space-y-4" onSubmit={handleSaveAi}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Prompt de reescritura</label>
+                <textarea
+                  value={aiPolicy.rewritePrompt}
+                  onChange={(e) => setAiPolicy((p) => ({ ...p, rewritePrompt: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 min-h-[140px]"
+                  placeholder={defaultRewritePrompt}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Placeholders: {'{tone}'}, {'{texto}'} / {'{text}'}. Se inserta automáticamente según el mensaje.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reglas de moderación</label>
+                <textarea
+                  value={aiPolicy.moderationRules}
+                  onChange={(e) => setAiPolicy((p) => ({ ...p, moderationRules: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200 min-h-[120px]"
+                  placeholder={defaultRules}
+                />
+                <p className="text-xs text-gray-500 mt-1">Una regla por línea. La IA marcará como sensible si detecta estos temas.</p>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-gray-500">
+                  {aiPolicy.updatedBy && (
+                    <span>
+                      Última edición por {aiPolicy.updatedBy}{' '}
+                      {aiPolicy.updatedAt ? `(${new Date(aiPolicy.updatedAt).toLocaleString()})` : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAiPolicy({
+                        rewritePrompt: defaultRewritePrompt,
+                        moderationRules: defaultRules,
+                        updatedBy: aiPolicy.updatedBy,
+                        updatedAt: aiPolicy.updatedAt,
+                      })
+                    }
+                    className="px-4 py-2 border border-gray-300 text-gray-800 rounded-lg text-sm hover:border-primary hover:text-primary"
+                  >
+                    Restablecer valores sugeridos
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingAi}
+                    className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+                  >
+                    {savingAi ? 'Guardando...' : 'Guardar política'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
 
       <Modal

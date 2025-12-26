@@ -43,7 +43,12 @@ export const Button: React.FC<ButtonProps> = ({
         (disabled || loading) && 'cursor-not-allowed opacity-60'
       )}
     >
-      {loading && <span className="animate-spin">⏳</span>}
+      {loading && (
+        <span
+          className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin"
+          aria-hidden="true"
+        />
+      )}
       {children}
     </button>
   );

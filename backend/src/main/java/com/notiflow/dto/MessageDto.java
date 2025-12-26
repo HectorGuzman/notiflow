@@ -5,6 +5,7 @@ import com.notiflow.model.AttachmentMetadata;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public record MessageDto(
         String id,
@@ -15,11 +16,15 @@ public record MessageDto(
         List<String> channels,
         MessageStatus emailStatus,
         MessageStatus appStatus,
+        List<String> appReadBy,
+        Map<String, MessageStatus> appStatuses,
         String schoolId,
         String year,
         MessageStatus status,
+        Instant scheduledAt,
         Instant createdAt,
         List<AttachmentMetadata> attachments,
-        String reason
+        String reason,
+        Boolean canDelete
 ) {
 }

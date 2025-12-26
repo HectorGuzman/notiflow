@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "763299778868",
+    "project_id": "notiflow-480919-11ee8",
+    "storage_bucket": "notiflow-480919-11ee8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:763299778868:android:ee4e68b27949de1506d561",
+        "android_client_info": {
+          "package_name": "com.notiflow.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUxzNGmRdOrP0AKVTib4zp68JfMUQlJ1Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

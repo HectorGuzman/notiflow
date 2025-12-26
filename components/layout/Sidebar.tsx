@@ -11,6 +11,7 @@ import {
   FiBarChart2,
   FiSettings,
   FiChevronDown,
+  FiCalendar,
 } from 'react-icons/fi';
 import { useAuthStore } from '@/store';
 
@@ -19,6 +20,8 @@ export const Sidebar: React.FC = () => {
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const user = useAuthStore((state) => state.user);
   const hasPermission = useAuthStore((state) => state.hasPermission);
+  const role = (user?.role || '').toUpperCase();
+  const isTeacherOrViewer = role === 'TEACHER' || role === 'GUARDIAN' || role === 'STUDENT';
 
   const canCreateMessage = hasPermission('messages.create');
   const canListMessages = hasPermission('messages.list');
@@ -31,12 +34,18 @@ export const Sidebar: React.FC = () => {
     hasPermission('groups.create') ||
     hasPermission('groups.update') ||
     hasPermission('groups.delete');
-  const canSeeManagement = canManageStudents || canManageGroups;
+  const canSeeManagement = !isTeacherOrViewer && (canManageStudents || canManageGroups);
   const canSeeReports = hasPermission('reports.view');
   const canSeeSettings =
-    hasPermission('users.create') ||
-    hasPermission('users.delete') ||
-    hasPermission('schools.manage');
+    !isTeacherOrViewer &&
+    (hasPermission('users.create') ||
+      hasPermission('users.delete') ||
+      hasPermission('schools.manage'));
+  const canCreateEvents =
+    role === 'SUPERADMIN' ||
+    role === 'ADMIN' ||
+    role === 'TEACHER' ||
+    hasPermission('events.create');
 
   const menuItems = useMemo(
     () => [
@@ -56,6 +65,13 @@ export const Sidebar: React.FC = () => {
         href: '/messages',
         icon: FiMessageCircle,
         hidden: !canListMessages,
+      },
+      {
+        label: 'Eventos',
+        href: '/events',
+        icon: FiCalendar,
+        hidden: false, // visible para ver agenda; creación se controla en la página
+        badge: canCreateEvents ? 'Nuevo' : undefined,
       },
       {
         label: 'Gestión',
@@ -87,6 +103,7 @@ export const Sidebar: React.FC = () => {
       canSeeManagement,
       canSeeReports,
       canSeeSettings,
+      canCreateEvents,
     ]
   );
 

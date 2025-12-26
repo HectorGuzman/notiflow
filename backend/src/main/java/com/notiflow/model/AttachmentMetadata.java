@@ -7,16 +7,18 @@ public class AttachmentMetadata {
     private String downloadUrl;
     private Boolean inline;
     private String cid;
+    private String objectPath;
 
     public AttachmentMetadata() {}
 
-    public AttachmentMetadata(String fileName, String mimeType, Long sizeBytes, String downloadUrl, Boolean inline, String cid) {
+    public AttachmentMetadata(String fileName, String mimeType, Long sizeBytes, String downloadUrl, Boolean inline, String cid, String objectPath) {
         this.fileName = fileName;
         this.mimeType = mimeType;
         this.sizeBytes = sizeBytes;
         this.downloadUrl = downloadUrl;
         this.inline = inline;
         this.cid = cid;
+        this.objectPath = objectPath;
     }
 
     public String getFileName() { return fileName; }
@@ -36,4 +38,7 @@ public class AttachmentMetadata {
 
     public String getCid() { return cid; }
     public void setCid(String cid) { this.cid = cid; }
+
+    public String getObjectPath() { return objectPath; }
+    public void setObjectPath(String objectPath) { this.objectPath = objectPath; }
 }

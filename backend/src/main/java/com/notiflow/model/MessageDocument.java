@@ -4,6 +4,7 @@ import com.google.cloud.firestore.annotation.DocumentId;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public class MessageDocument {
 
@@ -21,8 +22,13 @@ public class MessageDocument {
     private String year;
     private MessageStatus status;
     private Instant createdAt;
+    private Instant scheduledAt;
     private List<AttachmentMetadata> attachments;
     private String reason;
+    // destinatarios que ya leyeron en la app
+    private List<String> appReadBy;
+    // estado por destinatario para la app (PENDING/READ)
+    private Map<String, MessageStatus> appStatuses;
 
     public MessageDocument() {
     }
@@ -147,6 +153,14 @@ public class MessageDocument {
         this.createdAt = createdAt;
     }
 
+    public Instant getScheduledAt() {
+        return scheduledAt;
+    }
+
+    public void setScheduledAt(Instant scheduledAt) {
+        this.scheduledAt = scheduledAt;
+    }
+
     public List<AttachmentMetadata> getAttachments() {
         return attachments;
     }
@@ -161,5 +175,21 @@ public class MessageDocument {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public List<String> getAppReadBy() {
+        return appReadBy;
+    }
+
+    public void setAppReadBy(List<String> appReadBy) {
+        this.appReadBy = appReadBy;
+    }
+
+    public Map<String, MessageStatus> getAppStatuses() {
+        return appStatuses;
+    }
+
+    public void setAppStatuses(Map<String, MessageStatus> appStatuses) {
+        this.appStatuses = appStatuses;
     }
 }

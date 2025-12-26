@@ -24,6 +24,8 @@ export const Header: React.FC = () => {
   const { year, setYear } = useYearStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [schoolLogo, setSchoolLogo] = React.useState<string | null>(null);
+  const role = (user?.role || '').toUpperCase();
+  const isTeacherOrViewer = role === 'TEACHER' || role === 'GUARDIAN' || role === 'STUDENT';
 
   const canCreateMessage = hasPermission('messages.create');
   const canListMessages = hasPermission('messages.list');
@@ -36,12 +38,13 @@ export const Header: React.FC = () => {
     hasPermission('groups.create') ||
     hasPermission('groups.update') ||
     hasPermission('groups.delete');
-  const canSeeManagement = canManageStudents || canManageGroups;
+  const canSeeManagement = !isTeacherOrViewer && (canManageStudents || canManageGroups);
   const canSeeReports = hasPermission('reports.view');
   const canSeeSettings =
-    hasPermission('users.create') ||
-    hasPermission('users.delete') ||
-    hasPermission('schools.manage');
+    !isTeacherOrViewer &&
+    (hasPermission('users.create') ||
+      hasPermission('users.delete') ||
+      hasPermission('schools.manage'));
 
   const mobileMenuItems = useMemo(
     () => [

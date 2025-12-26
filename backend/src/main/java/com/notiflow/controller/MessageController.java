@@ -30,7 +30,8 @@ public class MessageController {
     public ResponseEntity<List<MessageDto>> list(
             @RequestParam(value = "year", required = false) String year,
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(value = "self", defaultValue = "false") boolean self
     ) {
         CurrentUser user = CurrentUser.fromContext()
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
@@ -43,6 +44,9 @@ public class MessageController {
             accessControlService.check(user, "messages.list", user.schoolId(), Optional.ofNullable(user.email()));
             senderFilter = user.email();
         }
+        if (self) {
+            senderFilter = user.email();
+        }
         return ResponseEntity.ok(messageService.list(year, senderFilter, page, pageSize));
     }
 
@@ -52,8 +56,78 @@ public class MessageController {
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
         accessControlService.check(user, "messages.create", request.schoolId() != null ? request.schoolId() : user.schoolId(), Optional.empty());
         String senderEmail = user.email() != null ? user.email() : (principal != null ? principal.getName() : "anon@notiflow.app");
-        String senderName = principal != null ? principal.getName() : senderEmail.split("@")[0];
+        String senderName = user.name() != null && !user.name().isBlank()
+                ? user.name()
+                : (principal != null && principal.getName() != null ? principal.getName() : senderEmail.split("@")[0]);
         MessageDto created = messageService.create(request, senderEmail, senderName);
         return ResponseEntity.ok(created);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<MessageDto> getOne(@PathVariable("id") String id) {
+        CurrentUser user = CurrentUser.fromContext()
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        MessageDto dto = messageService.getById(id);
+        // permitir si tiene permiso o si es destinatario
+        try {
+            accessControlService.check(user, "messages.list", dto.schoolId(), Optional.empty());
+        } catch (org.springframework.web.server.ResponseStatusException ex) {
+            if (dto.recipients() == null || user.email() == null || !dto.recipients().contains(user.email())) {
+                throw ex;
+            }
+        }
+        return ResponseEntity.ok(dto);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable("id") String id) {
+        CurrentUser user = CurrentUser.fromContext()
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        MessageDto dto = messageService.getById(id);
+        String role = (user.role() == null) ? "" : user.role().toLowerCase();
+
+        boolean allowed = false;
+        if (user.isSuperAdmin() || user.isGlobalAdmin()) {
+            allowed = true;
+        } else if ("admin".equals(role)) {
+            allowed = user.hasSchoolScope(dto.schoolId());
+        } else if ("teacher".equals(role)) {
+            allowed = user.email() != null && user.email().equalsIgnoreCase(dto.senderEmail());
+        }
+
+        if (!allowed) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes eliminar este mensaje");
+        }
+
+        messageService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/read")
+    public ResponseEntity<Void> markRead(@PathVariable("id") String messageId) {
+        CurrentUser user = CurrentUser.fromContext()
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        // Solo destinatarios o roles con permiso de listado pueden marcar
+        try {
+            accessControlService.check(user, "messages.list", user.schoolId(), Optional.empty());
+        } catch (org.springframework.web.server.ResponseStatusException ex) {
+            // si no tiene permisos amplios, permitimos si es el destinatario
+        }
+        if (user.email() == null || user.email().isBlank()) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Email requerido");
+        }
+        messageService.markAsRead(messageId, user.email());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/process-scheduled")
+    public ResponseEntity<java.util.Map<String, Integer>> processScheduled() {
+        CurrentUser user = CurrentUser.fromContext()
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        if (!user.isSuperAdmin() && !user.isGlobalAdmin()) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "Solo superadmin");
+        }
+        int processed = messageService.processScheduled();
+        return ResponseEntity.ok(java.util.Map.of("processed", processed));
     }
 }

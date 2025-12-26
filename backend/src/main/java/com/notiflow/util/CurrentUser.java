@@ -6,7 +6,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.Map;
 import java.util.Optional;
 
-public record CurrentUser(String email, String role, String schoolId, String schoolName) {
+public record CurrentUser(String email, String role, String schoolId, String schoolName, String name) {
 
     public boolean isSuperAdmin() {
         return role != null && "*".equals(role);
@@ -33,7 +33,8 @@ public record CurrentUser(String email, String role, String schoolId, String sch
             String role = (String) map.get("role");
             String schoolId = (String) map.get("schoolId");
             String schoolName = (String) map.get("schoolName");
-            return Optional.of(new CurrentUser(email, role, schoolId, schoolName));
+            String name = (String) map.get("name");
+            return Optional.of(new CurrentUser(email, role, schoolId, schoolName, name));
         }
         return Optional.empty();
     }

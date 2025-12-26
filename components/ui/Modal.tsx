@@ -21,11 +21,12 @@ export const Modal: React.FC<ModalProps> = ({
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
+    xl: 'w-full max-w-5xl',
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className={clsx('bg-white rounded-lg shadow-xl', sizeStyles[size])}>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+      <div className={clsx('bg-white rounded-lg shadow-xl w-full', sizeStyles[size])}>
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold text-gray-900">{title}</h2>
         </div>

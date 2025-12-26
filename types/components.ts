@@ -14,7 +14,7 @@ export interface ButtonProps {
 export interface InputProps {
   label?: string;
   placeholder?: string;
-  type?: 'text' | 'email' | 'password' | 'number' | 'tel';
+  type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'datetime-local';
   value?: string;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   error?: string;
@@ -63,5 +63,5 @@ export interface ModalProps {
   onConfirm?: () => void;
   confirmText?: string;
   cancelText?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }

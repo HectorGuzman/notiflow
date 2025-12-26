@@ -12,6 +12,7 @@ public record MessageRequest(
         String year,
         String schoolId,
         String reason,
-        List<AttachmentRequest> attachments
+        List<AttachmentRequest> attachments,
+        String scheduleAt
 ) {
 }

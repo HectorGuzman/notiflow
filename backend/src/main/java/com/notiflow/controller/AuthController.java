@@ -6,6 +6,10 @@ import com.notiflow.dto.LoginRequest;
 import com.notiflow.dto.ResetPasswordRequest;
 import com.notiflow.dto.UserDto;
 import com.notiflow.model.UserRole;
+import com.notiflow.dto.OtpRequest;
+import com.notiflow.dto.OtpVerifyRequest;
+import com.notiflow.service.OtpService;
+import com.notiflow.service.UsageService;
 import com.notiflow.service.AuthService;
 import com.notiflow.service.JwtService;
 import com.notiflow.service.PasswordResetService;
@@ -27,11 +31,15 @@ public class AuthController {
     private final AuthService authService;
     private final JwtService jwtService;
     private final PasswordResetService passwordResetService;
+    private final OtpService otpService;
+    private final UsageService usageService;
 
-    public AuthController(AuthService authService, JwtService jwtService, PasswordResetService passwordResetService) {
+    public AuthController(AuthService authService, JwtService jwtService, PasswordResetService passwordResetService, OtpService otpService, UsageService usageService) {
         this.authService = authService;
         this.jwtService = jwtService;
         this.passwordResetService = passwordResetService;
+        this.otpService = otpService;
+        this.usageService = usageService;
     }
 
     @PostMapping("/login")
@@ -86,5 +94,24 @@ public class AuthController {
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(java.util.Map.of("message", ex.getMessage()));
         }
+    }
+
+    @PostMapping("/otp/request")
+    public ResponseEntity<?> requestOtp(@Valid @RequestBody OtpRequest request) {
+        otpService.requestCode(request.email());
+        return ResponseEntity.ok(Map.of("message", "Código enviado si el correo existe"));
+    }
+
+    @PostMapping("/otp/verify")
+    public ResponseEntity<AuthResponse> verifyOtp(@Valid @RequestBody OtpVerifyRequest request) {
+        boolean ok = otpService.verifyCode(request.email(), request.code());
+        if (!ok) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
+        }
+        // OTP válido, devolvemos un token como login con password
+        AuthResponse resp = authService.loginWithoutPassword(request.email());
+        // Solo contar login de app aquí
+        try { usageService.recordAppLogin(request.email()); } catch (Exception ignored) {}
+        return ResponseEntity.ok(resp);
     }
 }

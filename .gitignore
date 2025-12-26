@@ -15,6 +15,12 @@ pnpm-debug.log*
 # OS
 .DS_Store
 
+# Gradle / caches
+.gradle
+.gradle-local
+**/.gradle/
+**/.kotlin/
+
 # Backend (Maven)
 backend/.m2
 backend/target
@@ -39,3 +45,5 @@ mobile_flutter/android/app/profile
 mobile_flutter/android/app/release
 mobile_flutter/notifications_flutter.iml
 mobile_flutter/notiflow_flutter.iml
+mobile_flutter/.gradle-local
+mobile_flutter/android/.kotlin

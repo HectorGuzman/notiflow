@@ -68,6 +68,28 @@ class APIClient {
     return this.client.post('/messages', data);
   }
 
+  // Plantillas
+  async getTemplates() {
+    return this.client.get('/templates');
+  }
+
+  async createTemplate(data: { name: string; content: string }) {
+    return this.client.post('/templates', data);
+  }
+
+  async updateTemplate(id: string, data: { name: string; content: string }) {
+    return this.client.put(`/templates/${id}`, data);
+  }
+
+  async deleteTemplate(id: string) {
+    return this.client.delete(`/templates/${id}`);
+  }
+
+  // Uso / métricas
+  async getUsageMetrics() {
+    return this.client.get('/reports/usage');
+  }
+
   async getMessages(params?: any) {
     return this.client.get('/messages', { params });
   }
@@ -150,6 +172,22 @@ class APIClient {
     return this.client.get('/groups', { params: { schoolId, year } });
   }
 
+  // Eventos
+  async getEvents(params?: { from?: string; to?: string; type?: string }) {
+    return this.client.get('/events', { params });
+  }
+
+  async createEvent(data: {
+    title: string;
+    description?: string;
+    startDateTime: string;
+    endDateTime?: string;
+    type?: string;
+    audience?: { userIds?: string[]; groupIds?: string[] };
+  }) {
+    return this.client.post('/events', data);
+  }
+
   async createGroup(data: {
     name: string;
     description?: string;
@@ -183,6 +221,19 @@ class APIClient {
 
   async resetPassword(token: string, newPassword: string) {
     return this.client.post('/auth/reset', { token, newPassword });
+  }
+
+  // IA (Vertex)
+  async aiRewriteModerate(text: string, subject?: string, tone?: string) {
+    return this.client.post('/ai/rewrite-moderate', { text, subject, tone });
+  }
+
+  async getAiPolicy() {
+    return this.client.get('/ai/policy');
+  }
+
+  async updateAiPolicy(data: { rewritePrompt: string; moderationRules: string[] }) {
+    return this.client.put('/ai/policy', data);
   }
 }
 

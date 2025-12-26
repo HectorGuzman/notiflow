@@ -26,6 +26,19 @@ public class GroupService {
         this.firestore = firestore;
     }
 
+    public List<String> findGroupsForMember(String email, String schoolId) {
+        if (email == null || email.isBlank()) return List.of();
+        try {
+            var query = firestore.collection("groups")
+                    .whereEqualTo("schoolId", schoolId)
+                    .whereArrayContains("memberIds", email);
+            ApiFuture<QuerySnapshot> future = query.limit(50).get();
+            return future.get().getDocuments().stream().map(QueryDocumentSnapshot::getId).collect(Collectors.toList());
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
     public List<GroupDto> listBySchool(String schoolId, String year, int page, int pageSize) {
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, pageSize), 100);

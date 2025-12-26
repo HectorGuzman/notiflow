@@ -20,13 +20,15 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final String superAdminEmail;
     private final AccessControlService accessControlService;
+    private final UsageService usageService;
 
-    public AuthService(JwtService jwtService, UserService userService, PasswordEncoder passwordEncoder, AccessControlService accessControlService) {
+    public AuthService(JwtService jwtService, UserService userService, PasswordEncoder passwordEncoder, AccessControlService accessControlService, UsageService usageService) {
         this.jwtService = jwtService;
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.superAdminEmail = System.getenv().getOrDefault("SUPER_ADMIN_EMAIL", "").toLowerCase();
         this.accessControlService = accessControlService;
+        this.usageService = usageService;
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -42,6 +44,17 @@ public class AuthService {
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED, "Correo o contraseña inválidos");
         }
 
+        return buildAuthResponse(doc);
+    }
+
+    public AuthResponse loginWithoutPassword(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Correo requerido");
+        }
+        String normalized = email.toLowerCase();
+        UserDocument doc = userService.findByEmail(normalized)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED, "Usuario no encontrado"));
+
         // Elevación de super admin para el correo definido
         if (!superAdminEmail.isBlank() && superAdminEmail.equalsIgnoreCase(doc.getEmail())) {
             doc.setRole(UserRole.ADMIN);
@@ -50,6 +63,10 @@ public class AuthService {
             userService.upsert(doc);
         }
 
+        return buildAuthResponse(doc);
+    }
+
+    private AuthResponse buildAuthResponse(UserDocument doc) {
         UserDto user = new UserDto(
                 doc.getId(),
                 doc.getName(),

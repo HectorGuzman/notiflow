@@ -68,3 +68,24 @@ export interface SchoolConfig {
   levels: Level[];
   adminUsers: User[];
 }
+
+export type EventType = 'general' | 'schedule';
+
+export interface EventAudience {
+  userIds: string[];
+  groupIds: string[];
+}
+
+export interface EventItem {
+  id: string;
+  title: string;
+  description?: string;
+  startDateTime: string;
+  endDateTime?: string;
+  type: EventType;
+  schoolId?: string;
+  createdBy?: string;
+  createdByName?: string;
+  audience?: EventAudience;
+  createdAt?: string;
+}
