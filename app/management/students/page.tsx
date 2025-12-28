@@ -1,63 +1,203 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { FiMail, FiPhone, FiMapPin, FiHome } from 'react-icons/fi';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { apiClient } from '@/lib/api-client';
-import { useAuthStore } from '@/store';
+import { useAuthStore, useYearStore } from '@/store';
+import { Modal } from '@/components/ui';
+
+type StudentItem = {
+  id: string;
+  schoolId: string;
+  year?: string;
+  course?: string;
+  run?: string;
+  gender?: string;
+  firstName?: string;
+  lastNameFather?: string;
+  lastNameMother?: string;
+  address?: string;
+  commune?: string;
+  email?: string;
+  phone?: string;
+  guardianFirstName?: string;
+  guardianLastName?: string;
+};
 
 export default function StudentsPage() {
+  const user = useAuthStore((state) => state.user);
   const hasPermission = useAuthStore((state) => state.hasPermission);
+  const { year } = useYearStore();
   const canManageStudents =
     hasPermission('students.create') ||
     hasPermission('students.update') ||
     hasPermission('students.delete');
+  const canCreateStudents = hasPermission('students.create');
+  const canUpdateStudents = hasPermission('students.update');
+  const isGlobalAdmin = (user?.schoolId || '').toLowerCase() === 'global';
   const [query, setQuery] = useState('');
-  const [students, setStudents] = useState<any[]>([]);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [students, setStudents] = useState<StudentItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const pageSize = 50;
+  const [yearFilter, setYearFilter] = useState<string>(year || '');
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [studentForm, setStudentForm] = useState({
+    firstName: '',
+    lastNameFather: '',
+    lastNameMother: '',
+    course: '',
+    year: year || '',
+    run: '',
+    gender: '',
+    email: '',
+    phone: '',
+    commune: '',
+    address: '',
+    guardianFirstName: '',
+    guardianLastName: '',
+    schoolId: isGlobalAdmin ? '' : user?.schoolId || '',
+  });
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery, yearFilter]);
 
   useEffect(() => {
     if (!canManageStudents) return;
-    const load = async () => {
+    setStudentForm((prev) => ({
+      ...prev,
+      schoolId: isGlobalAdmin ? prev.schoolId : user?.schoolId || prev.schoolId,
+    }));
+  }, [canManageStudents, isGlobalAdmin, user]);
+
+  const loadStudents = useCallback(
+    async (forcedPage?: number) => {
+      if (!canManageStudents) return;
+      const currentPage = forcedPage ?? page;
       setLoading(true);
-      setError('');
+      setListError('');
       try {
-        const res = await apiClient.getUsers();
-        const data = (res.data || []).filter((u: any) => (u.role || '').toLowerCase() === 'student');
-        setStudents(data);
+        const res = await apiClient.getStudents({
+          year: yearFilter || undefined,
+          page: currentPage,
+          pageSize,
+          q: debouncedQuery || undefined,
+        });
+        const data = res.data || {};
+        setStudents(data.items || []);
+        setTotal(data.total ?? (data.items?.length || 0));
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||
           err?.response?.data?.error ||
           err?.message ||
           'No se pudieron cargar los estudiantes';
-        setError(msg);
+        setListError(msg);
       } finally {
         setLoading(false);
       }
-    };
-    load();
-  }, [canManageStudents]);
+    },
+    [canManageStudents, debouncedQuery, page, pageSize, yearFilter]
+  );
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    if (!q) return students;
-    return students.filter(
-      (s) =>
-        s.name?.toLowerCase().includes(q) ||
-        s.email?.toLowerCase().includes(q) ||
-        s.schoolName?.toLowerCase().includes(q)
-    );
-  }, [query, students]);
+  useEffect(() => {
+    loadStudents();
+  }, [loadStudents]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, page]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const paginated = students;
+
+  const resetForm = () => {
+    setEditingId(null);
+    setStudentForm({
+      firstName: '',
+      lastNameFather: '',
+      lastNameMother: '',
+      course: '',
+      year: yearFilter || year || '',
+      run: '',
+      gender: '',
+      email: '',
+      phone: '',
+      commune: '',
+      address: '',
+      guardianFirstName: '',
+      guardianLastName: '',
+      schoolId: isGlobalAdmin ? '' : user?.schoolId || '',
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canCreateStudents && !canUpdateStudents) return;
+    setSaving(true);
+    setFormError('');
+    setSuccess('');
+    try {
+      const payload = {
+        ...studentForm,
+        year: studentForm.year || yearFilter || year || undefined,
+        schoolId: isGlobalAdmin ? studentForm.schoolId || undefined : user?.schoolId,
+      };
+      if (editingId) {
+        await apiClient.updateStudent(editingId, payload);
+        setSuccess('Estudiante actualizado correctamente');
+      } else {
+        await apiClient.createStudent(payload);
+        setSuccess('Estudiante creado correctamente');
+        setPage(1);
+      }
+      resetForm();
+      await loadStudents(editingId ? undefined : 1);
+      setShowForm(false);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo guardar el estudiante';
+      setFormError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEdit = (s: StudentItem) => {
+    setEditingId(s.id);
+    setSuccess('');
+    setFormError('');
+    setStudentForm({
+      firstName: s.firstName || '',
+      lastNameFather: s.lastNameFather || '',
+      lastNameMother: s.lastNameMother || '',
+      course: s.course || '',
+      year: s.year || yearFilter || year || '',
+      run: s.run || '',
+      gender: s.gender || '',
+      email: s.email || '',
+      phone: s.phone || '',
+      commune: s.commune || '',
+      address: s.address || '',
+      guardianFirstName: s.guardianFirstName || '',
+      guardianLastName: s.guardianLastName || '',
+      schoolId: isGlobalAdmin ? s.schoolId || '' : user?.schoolId || '',
+    });
+  };
 
   if (!canManageStudents) {
     return (
@@ -86,50 +226,291 @@ export default function StudentsPage() {
           </Link>
         </div>
 
+        {(canCreateStudents || canUpdateStudents) && (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Listado</h2>
+                <p className="text-sm text-gray-600">
+                  Mostrando {paginated.length} de {total} estudiantes
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar por nombre, curso o email..."
+                  className="w-full sm:w-80 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+                <input
+                  type="text"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  placeholder="Año (ej: 2025)"
+                  className="w-full sm:w-32 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+                {canCreateStudents && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetForm();
+                      setShowForm(true);
+                    }}
+                    className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors"
+                  >
+                    + Nuevo estudiante
+                  </button>
+                )}
+              </div>
+            </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apellido paterno</label>
+                <input
+                  type="text"
+                  value={studentForm.lastNameFather}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, lastNameFather: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apellido materno</label>
+                <input
+                  type="text"
+                  value={studentForm.lastNameMother}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, lastNameMother: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Curso</label>
+                <input
+                  type="text"
+                  value={studentForm.course}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, course: e.target.value }))}
+                  placeholder="Ej: 4B"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Año</label>
+                <input
+                  type="text"
+                  value={studentForm.year}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, year: e.target.value }))}
+                  placeholder="Ej: 2025"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">RUN</label>
+                <input
+                  type="text"
+                  value={studentForm.run}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, run: e.target.value }))}
+                  placeholder="11.111.111-1"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Género</label>
+                <input
+                  type="text"
+                  value={studentForm.gender}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, gender: e.target.value }))}
+                  placeholder="Opcional"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={studentForm.email}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, email: e.target.value }))}
+                  placeholder="correo@colegio.cl"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                <input
+                  type="text"
+                  value={studentForm.phone}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  placeholder="+56 9 1234 5678"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Comuna</label>
+                <input
+                  type="text"
+                  value={studentForm.commune}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, commune: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                <input
+                  type="text"
+                  value={studentForm.address}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, address: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apoderado (nombre)</label>
+                <input
+                  type="text"
+                  value={studentForm.guardianFirstName}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, guardianFirstName: e.target.value }))}
+                  placeholder="Nombre apoderado"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apoderado (apellido)</label>
+                <input
+                  type="text"
+                  value={studentForm.guardianLastName}
+                  onChange={(e) => setStudentForm((prev) => ({ ...prev, guardianLastName: e.target.value }))}
+                  placeholder="Apellido apoderado"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
+              {isGlobalAdmin && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Colegio (ID)</label>
+                  <input
+                    type="text"
+                    value={studentForm.schoolId}
+                    onChange={(e) => setStudentForm((prev) => ({ ...prev, schoolId: e.target.value }))}
+                    placeholder="ID de colegio"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                  />
+                </div>
+              )}
+              <div className="md:col-span-2 flex justify-end gap-3">
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                    disabled={saving}
+                  >
+                    Cancelar edición
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
+                >
+                  {saving ? 'Guardando...' : editingId ? 'Actualizar estudiante' : 'Crear estudiante'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Listado</h2>
-                <p className="text-sm text-gray-600">Mostrando {paginated.length} de {filtered.length} estudiantes</p>
+                <p className="text-sm text-gray-600">
+                  Mostrando {paginated.length} de {total} estudiantes
+                </p>
               </div>
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar por nombre, curso o nivel..."
-                className="w-full sm:w-80 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-              />
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar por nombre, curso o email..."
+                  className="w-full sm:w-80 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+                <input
+                  type="text"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  placeholder="Año (ej: 2025)"
+                  className="w-full sm:w-32 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                />
+              </div>
             </div>
 
           {loading && <p className="text-sm text-gray-500">Cargando estudiantes...</p>}
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {listError && <p className="text-sm text-red-600">{listError}</p>}
 
           <div className="overflow-x-auto border border-gray-200 rounded-lg">
             <table className="min-w-full">
               <thead className="bg-gray-50 text-left text-sm text-gray-600">
                 <tr>
                   <th className="px-4 py-3">Estudiante</th>
-                  <th className="px-4 py-3">Rol</th>
-                  <th className="px-4 py-3">Colegio</th>
+                  <th className="px-4 py-3">Curso</th>
+                  <th className="px-4 py-3">Año</th>
+                  <th className="px-4 py-3">RUN</th>
+                  <th className="px-4 py-3">Apoderado</th>
                   <th className="px-4 py-3">Contacto</th>
+                  {canUpdateStudents && <th className="px-4 py-3">Acciones</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 text-sm">
-                {paginated.map((s: any) => (
+                {paginated.map((s: StudentItem) => (
                   <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-900 font-medium">{s.name}</td>
-                    <td className="px-4 py-3 text-gray-700 capitalize">{s.role || '—'}</td>
-                    <td className="px-4 py-3 text-gray-700">{s.schoolName || s.schoolId || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500">
-                      <div className="flex flex-col">
-                        <span>{s.email || 'Sin correo'}</span>
+                    <td className="px-4 py-3 text-gray-900 font-medium">
+                      {`${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim() || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{s.course || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">{s.year || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">{s.run || '—'}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {`${s.guardianFirstName || ''} ${s.guardianLastName || ''}`.trim() || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <FiMail className="text-gray-400" />
+                          <span className="truncate">{s.email || 'Sin correo'}</span>
+                        </div>
+                        {s.phone ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <FiPhone className="text-gray-400" />
+                            <span>{s.phone}</span>
+                          </div>
+                        ) : null}
+                        {s.commune ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <FiMapPin className="text-gray-400" />
+                            <span>{s.commune}</span>
+                          </div>
+                        ) : null}
+                        {s.address ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <FiHome className="text-gray-400" />
+                            <span className="truncate">{s.address}</span>
+                          </div>
+                        ) : null}
                       </div>
                     </td>
+                    {canUpdateStudents && (
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(s)}
+                          className="text-sm text-primary hover:text-green-800"
+                        >
+                          Editar
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
-                {!filtered.length && (
+                {!paginated.length && (
                   <tr>
-                    <td className="px-4 py-3 text-gray-500" colSpan={4}>
+                    <td className="px-4 py-3 text-gray-500" colSpan={canUpdateStudents ? 7 : 6}>
                       No se encontraron estudiantes con ese criterio.
                     </td>
                   </tr>

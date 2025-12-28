@@ -69,7 +69,9 @@ export default function ReportsPage() {
       setError('');
       try {
         const res = await apiClient.getMessages({ year });
-        setMessages(res.data || []);
+        const data = res.data || {};
+        const items = (data as any).items ?? data ?? [];
+        setMessages(items);
         const userRes = await apiClient.getUsers();
         setUsers(userRes.data || []);
         const usageRes = await apiClient.getUsageMetrics();
@@ -156,7 +158,7 @@ export default function ReportsPage() {
           {canCreateMessage && (
             <Link
               href="/messages/new"
-              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-green-700 transition-colors"
+              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-primary-dark transition-colors"
             >
               + Crear campaña
             </Link>
@@ -168,22 +170,6 @@ export default function ReportsPage() {
             {error}
           </div>
         )}
-
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Buscar por contenido o remitente"
-            className="w-full sm:w-96 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-          />
-          <div className="text-sm text-gray-600">
-            Mostrando {paginated.length} de {filtered.length} mensajes
-          </div>
-        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Mensajes (año)" value={loading ? '—' : total} />
@@ -228,11 +214,28 @@ export default function ReportsPage() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900">Resumen de mensajes</h2>
-            <span className="text-sm text-gray-500">
-              {loading ? 'Cargando...' : `${paginated.length} mostrado(s)`}
-            </span>
+          <div className="flex flex-col gap-3 p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-gray-900">Resumen de mensajes</h2>
+              <span className="text-sm text-gray-500">
+                {loading ? 'Cargando...' : `${paginated.length} mostrado(s)`}
+              </span>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Buscar por contenido o remitente"
+                className="w-full sm:w-96 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+              />
+              <div className="text-sm text-gray-600">
+                Mostrando {paginated.length} de {filtered.length} mensajes
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full">
@@ -247,7 +250,7 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 text-sm">
                 {paginated.map((m) => (
-                  <tr key={m.id} className="hover:bg-gray-50">
+                  <tr key={m.id} className="hover:bg-primary/5">
                     <td className="px-4 py-3 text-gray-900 font-medium line-clamp-2">{m.content}</td>
                     <td className="px-4 py-3 text-gray-700">{m.senderName || '—'}</td>
                     <td className="px-4 py-3">
@@ -321,8 +324,8 @@ function StatCard({ title, value }: { title: string; value: string | number }) {
 function Badge({ status }: { status: string }) {
   const s = (status || '').toLowerCase();
   const map: Record<string, string> = {
-    sent: 'bg-green-100 text-green-700',
-    delivered: 'bg-green-100 text-green-700',
+    sent: 'bg-primary/10 text-primary',
+    delivered: 'bg-primary/10 text-primary',
     failed: 'bg-red-100 text-red-700',
     pending: 'bg-yellow-100 text-yellow-700',
     read: 'bg-blue-100 text-blue-700',

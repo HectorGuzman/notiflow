@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const canDeleteUsers = hasPermission('users.delete');
   const canCreateUsers = hasPermission('users.create');
   const isGlobalAdmin = (user?.schoolId || '').toLowerCase() === 'global';
+  const canImportStudents = isGlobalAdmin;
 
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [schools, setSchools] = useState<SchoolItem[]>([]);
@@ -81,8 +82,18 @@ export default function SettingsPage() {
     updatedBy: '',
     updatedAt: '',
   });
+  const [importResult, setImportResult] = useState<{
+    processed: number;
+    created: number;
+    updated: number;
+    errors: string[];
+  } | null>(null);
+  const [importError, setImportError] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importSchoolId, setImportSchoolId] = useState('');
   const [loadingAi, setLoadingAi] = useState(false);
   const [savingAi, setSavingAi] = useState(false);
+  const [importingStudents, setImportingStudents] = useState(false);
   const defaultRewritePrompt = `Mejora la redacción del siguiente mensaje manteniendo el significado.
 Adáptalo a un tono {tone}, claro y respetuoso. Devuelve solo el texto mejorado sin marcas adicionales.
 Mensaje original:
@@ -132,6 +143,13 @@ Información sensible no académica`;
       loadAiPolicy();
     }
   }, [canAccessSettings, canManageSchools, canManageUsers, canManageAi]);
+
+  useEffect(() => {
+    if (isGlobalAdmin && importSchoolId === '' && schools.length > 0) {
+      const preferred = schools.find((s) => s.id === '13376') || schools[0];
+      setImportSchoolId(preferred.id);
+    }
+  }, [isGlobalAdmin, importSchoolId, schools]);
 
   useEffect(() => {
     if (!canManageUsers) return;
@@ -209,6 +227,34 @@ Información sensible no académica`;
       setError(msg);
     } finally {
       setSavingAi(false);
+    }
+  };
+
+  const handleImportStudents = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) {
+      setImportError('Selecciona un archivo CSV.');
+      return;
+    }
+    if (!importSchoolId) {
+      setImportError('Selecciona el colegio destino.');
+      return;
+    }
+    setImportingStudents(true);
+    setImportError('');
+    setImportResult(null);
+    try {
+      const res = await apiClient.importStudentsCsv(importFile, importSchoolId);
+      setImportResult(res.data);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'No se pudo importar el CSV';
+      setImportError(msg);
+    } finally {
+      setImportingStudents(false);
     }
   };
 
@@ -648,7 +694,7 @@ Información sensible no académica`;
                     <button
                       type="submit"
                       disabled={savingUser}
-                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
                     >
                       {savingUser ? 'Guardando...' : 'Crear usuario'}
                     </button>
@@ -775,7 +821,7 @@ Información sensible no académica`;
                     <button
                       type="submit"
                       disabled={savingSchool}
-                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
                     >
                       {savingSchool ? 'Guardando...' : 'Crear colegio'}
                     </button>
@@ -821,64 +867,88 @@ Información sensible no académica`;
                 </div>
               </div>
 
-              <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900">Importar colegio (CSV)</h2>
-                    <p className="text-sm text-gray-600">
-                      Sube un CSV con columnas name,email,role,password y asigna un colegio.
-                    </p>
-                  </div>
-                </div>
-                <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={handleImportCsv}>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Colegio ID</label>
-                    <input
-                      type="text"
-                      value={schoolForm.id}
-                      onChange={(e) => setSchoolForm((prev) => ({ ...prev, id: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                      placeholder="school-123"
-                      required
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del colegio</label>
-                    <input
-                      type="text"
-                      value={schoolForm.name}
-                      onChange={(e) => setSchoolForm((prev) => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-                      placeholder="Nombre visible"
-                      required
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Archivo CSV</label>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={(e) => handleCsvFile(e.target.files?.[0] || null)}
-                      className="w-full text-sm"
-                    />
-                    {csvInfo.fileName && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        {csvInfo.fileName} ({csvInfo.rows} filas)
-                      </p>
-                    )}
-                  </div>
-                  <div className="md:col-span-3 flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={importingCsv}
-                      className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
-                    >
-                      {importingCsv ? 'Importando...' : 'Importar CSV'}
-                    </button>
-                  </div>
-                </form>
-              </div>
             </>
+          )}
+
+          {canImportStudents && (
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Importar estudiantes (CSV)</h2>
+                  <p className="text-sm text-gray-600">
+                    Solo Superadmin. Carga alumnos para un colegio y se crean grupos “Todo el colegio” y por curso.
+                  </p>
+                </div>
+                <span className="text-xs text-gray-500">
+                  Encabezados esperados: Año, Curso, RUN, Genero, Nombres, Apellido Paterno, Apellido Materno, Direccion, Comuna Residencia, Email, Celular
+                </span>
+              </div>
+              <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleImportStudents}>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Colegio destino</label>
+                  <select
+                    value={importSchoolId}
+                    onChange={(e) => setImportSchoolId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                  >
+                    <option value="">Selecciona colegio</option>
+                    {schools.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Archivo CSV</label>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                    className="w-full text-sm"
+                  />
+                  {importFile && (
+                    <p className="text-xs text-gray-600 mt-1">{importFile.name}</p>
+                  )}
+                </div>
+                <div className="md:col-span-2 flex gap-3 items-center">
+                  <button
+                    type="submit"
+                    disabled={importingStudents}
+                    className={`px-4 py-2 rounded-lg text-white font-semibold ${
+                      importingStudents ? 'bg-primary/70' : 'bg-primary hover:bg-primary-dark'
+                    } transition-colors`}
+                  >
+                    {importingStudents ? 'Importando...' : 'Importar estudiantes'}
+                  </button>
+                  <Link href="/management/students" className="text-sm text-primary hover:text-green-800 underline">
+                    Ver estudiantes
+                  </Link>
+                </div>
+              </form>
+              {importError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+                  {importError}
+                </div>
+              )}
+              {importResult && (
+                <div className="p-3 bg-primary/10 border border-primary/30 text-primary text-sm rounded-lg space-y-1">
+                  <p>
+                    <strong>Procesadas:</strong> {importResult.processed} • <strong>Creadas:</strong> {importResult.created} • <strong>Actualizadas:</strong> {importResult.updated}
+                  </p>
+                  {importResult.errors && importResult.errors.length > 0 && (
+                    <details className="text-amber-800">
+                      <summary className="cursor-pointer">Errores ({importResult.errors.length})</summary>
+                      <ul className="list-disc list-inside">
+                        {importResult.errors.map((e, idx) => (
+                          <li key={idx}>{e}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
         </div>
@@ -944,7 +1014,7 @@ Información sensible no académica`;
                   <button
                     type="submit"
                     disabled={savingAi}
-                    className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+                    className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
                   >
                     {savingAi ? 'Guardando...' : 'Guardar política'}
                   </button>

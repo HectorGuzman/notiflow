@@ -1,6 +1,7 @@
 package com.notiflow.controller;
 
 import com.notiflow.dto.MessageDto;
+import com.notiflow.dto.MessageListResponse;
 import com.notiflow.dto.MessageRequest;
 import com.notiflow.service.AccessControlService;
 import com.notiflow.service.MessageService;
@@ -11,7 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
-import java.util.List;
 import java.util.Optional;
 
 @RestController
@@ -27,10 +27,11 @@ public class MessageController {
     }
 
     @GetMapping
-    public ResponseEntity<List<MessageDto>> list(
+    public ResponseEntity<MessageListResponse> list(
             @RequestParam(value = "year", required = false) String year,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(value = "q", required = false) String query,
             @RequestParam(value = "self", defaultValue = "false") boolean self
     ) {
         CurrentUser user = CurrentUser.fromContext()
@@ -47,7 +48,7 @@ public class MessageController {
         if (self) {
             senderFilter = user.email();
         }
-        return ResponseEntity.ok(messageService.list(year, senderFilter, page, pageSize));
+        return ResponseEntity.ok(messageService.list(year, senderFilter, query, page, pageSize));
     }
 
     @PostMapping

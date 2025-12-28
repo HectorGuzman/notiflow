@@ -3,11 +3,14 @@ package com.notiflow.service;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.AggregateQuery;
+import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.notiflow.dto.AttachmentRequest;
+import com.notiflow.dto.MessageListResponse;
 import com.notiflow.dto.MessageDto;
 import com.notiflow.dto.MessageRequest;
 import com.notiflow.model.AttachmentMetadata;
@@ -37,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 public class MessageService {
 
     private static final int MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB
+    private static final int MAX_SEARCH_SCAN = 5000;
     private final Firestore firestore;
     private final EmailService emailService;
     private final Storage storage;
@@ -71,7 +75,7 @@ public class MessageService {
         this.fcmCredentials = parseCredentials(fcmCredentialsJson);
     }
 
-    public List<MessageDto> list(String year, String senderEmailFilter, int page, int pageSize) {
+    public MessageListResponse list(String year, String senderEmailFilter, String query, int page, int pageSize) {
         try {
             int safePage = Math.max(1, page);
             int safeSize = Math.min(Math.max(1, pageSize), 100);
@@ -82,20 +86,7 @@ public class MessageService {
             if (senderEmailFilter != null && !senderEmailFilter.isBlank()) {
                 queryRef = queryRef.whereArrayContains("recipients", senderEmailFilter);
             }
-            ApiFuture<QuerySnapshot> query = queryRef
-                    .orderBy("createdAt", com.google.cloud.firestore.Query.Direction.DESCENDING)
-                    .offset((safePage - 1) * safeSize)
-                    .limit(safeSize)
-                    .get();
-            List<QueryDocumentSnapshot> docs = query.get().getDocuments();
-            CurrentUser current = CurrentUser.fromContext().orElse(null);
-            return docs.stream()
-                    .map(doc -> {
-                        MessageDocument msg = doc.toObject(MessageDocument.class);
-                        msg.setId(doc.getId());
-                        return toDto(msg, current);
-                    })
-                    .collect(Collectors.toList());
+            return fetch(queryRef, query, safePage, safeSize);
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Error listando mensajes", e);
@@ -118,6 +109,70 @@ public class MessageService {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Error obteniendo mensaje", e);
         }
+    }
+
+    private MessageListResponse fetch(com.google.cloud.firestore.Query baseQuery, String search, int page, int size) throws ExecutionException, InterruptedException {
+        String normalized = search == null ? "" : search.trim().toLowerCase();
+        boolean hasSearch = !normalized.isBlank();
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
+        CurrentUser current = CurrentUser.fromContext().orElse(null);
+        com.google.cloud.firestore.Query sorted = baseQuery.orderBy("createdAt", com.google.cloud.firestore.Query.Direction.DESCENDING);
+
+        if (hasSearch) {
+            ApiFuture<QuerySnapshot> future = sorted.limit(MAX_SEARCH_SCAN).get();
+            List<QueryDocumentSnapshot> docs = future.get().getDocuments();
+            List<MessageDto> filtered = docs.stream()
+                    .map(doc -> {
+                        MessageDocument msg = doc.toObject(MessageDocument.class);
+                        if (msg == null) return null;
+                        msg.setId(doc.getId());
+                        return toDto(msg, current);
+                    })
+                    .filter(Objects::nonNull)
+                    .filter(dto -> matchesQuery(dto, normalized))
+                    .collect(Collectors.toList());
+            boolean reachedLimit = docs.size() == MAX_SEARCH_SCAN;
+            int from = Math.min((safePage - 1) * safeSize, filtered.size());
+            int to = Math.min(from + safeSize, filtered.size());
+            List<MessageDto> pageItems = filtered.subList(from, to);
+            boolean hasMore = reachedLimit || to < filtered.size();
+            long total = filtered.size() + (reachedLimit ? 1 : 0);
+            return new MessageListResponse(pageItems, total, safePage, safeSize, hasMore);
+        } else {
+            long total = count(sorted);
+            ApiFuture<QuerySnapshot> query = sorted
+                    .offset((safePage - 1) * safeSize)
+                    .limit(safeSize)
+                    .get();
+            List<QueryDocumentSnapshot> docs = query.get().getDocuments();
+            List<MessageDto> items = docs.stream()
+                    .map(doc -> {
+                        MessageDocument msg = doc.toObject(MessageDocument.class);
+                        if (msg == null) return null;
+                        msg.setId(doc.getId());
+                        return toDto(msg, current);
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            boolean hasMore = (long) safePage * safeSize < total;
+            return new MessageListResponse(items, total, safePage, safeSize, hasMore);
+        }
+    }
+
+    private boolean matchesQuery(MessageDto dto, String q) {
+        String content = dto.content() == null ? "" : dto.content().toLowerCase();
+        String senderName = dto.senderName() == null ? "" : dto.senderName().toLowerCase();
+        String senderEmail = dto.senderEmail() == null ? "" : dto.senderEmail().toLowerCase();
+        String reason = dto.reason() == null ? "" : dto.reason().toLowerCase();
+        String recipients = dto.recipients() == null ? "" : String.join(",", dto.recipients()).toLowerCase();
+        return content.contains(q) || senderName.contains(q) || senderEmail.contains(q) || recipients.contains(q) || reason.contains(q);
+    }
+
+    private long count(com.google.cloud.firestore.Query q) throws ExecutionException, InterruptedException {
+        AggregateQuery countQuery = q.count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get();
+        return snapshot.getCount();
     }
 
     public void delete(String id) {

@@ -99,7 +99,9 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<MessageItem | null>(null);
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
@@ -114,13 +116,30 @@ export default function MessagesPage() {
   const pageSize = 20;
 
   useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, year]);
+
+  useEffect(() => {
     if (!canList) return;
     const load = async () => {
       setLoading(true);
       setError('');
       try {
-        const res = await apiClient.getMessages({ year });
-        setMessages(res.data || []);
+        const res = await apiClient.getMessages({
+          year,
+          page,
+          pageSize,
+          q: debouncedSearch || undefined,
+        });
+        const data = res.data || {};
+        const items = data.items ?? data ?? [];
+        setMessages(items);
+        setTotal(data.total ?? items.length ?? 0);
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||
@@ -133,36 +152,25 @@ export default function MessagesPage() {
       }
     };
     load();
-  }, [canList, year]);
+  }, [canList, year, page, pageSize, debouncedSearch]);
 
-  const filtered = useMemo(() => {
-    const term = search.toLowerCase();
-    return (messages || []).filter(
-      (m) =>
-        !term ||
-        m.content?.toLowerCase().includes(term) ||
-        m.senderName?.toLowerCase().includes(term) ||
-        m.senderEmail?.toLowerCase().includes(term) ||
-        (Array.isArray(m.recipients) && m.recipients.join(',').toLowerCase().includes(term))
-    );
-  }, [messages, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filtered.slice(start, start + pageSize).map((m) => ({
-      ...m,
-      recipientsText: Array.isArray(m.recipients) ? m.recipients.join(', ') : '',
-      channelsText: Array.isArray(m.channels) ? m.channels.join(', ') : '',
-      createdText:
-        m.status?.toLowerCase() === 'scheduled' && m.scheduledAt
-          ? `Programado: ${new Date(m.scheduledAt).toLocaleString()}`
-          : m.createdAt
-            ? new Date(m.createdAt).toLocaleString()
-            : '',
-      canDelete: (m as any).canDelete ?? false,
-    }));
-  }, [filtered, page, pageSize]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const paginated = useMemo(
+    () =>
+      (messages || []).map((m) => ({
+        ...m,
+        recipientsText: Array.isArray(m.recipients) ? m.recipients.join(', ') : '',
+        channelsText: Array.isArray(m.channels) ? m.channels.join(', ') : '',
+        createdText:
+          m.status?.toLowerCase() === 'scheduled' && m.scheduledAt
+            ? `Programado: ${new Date(m.scheduledAt).toLocaleString()}`
+            : m.createdAt
+              ? new Date(m.createdAt).toLocaleString()
+              : '',
+        canDelete: (m as any).canDelete ?? false,
+      })),
+    [messages]
+  );
 
   if (!canList) {
     return (
@@ -191,7 +199,7 @@ export default function MessagesPage() {
           {canCreate && (
             <Link
               href="/messages/new"
-              className="inline-flex px-6 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+              className="inline-flex px-6 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors"
             >
               + Nuevo Mensaje
             </Link>
@@ -210,7 +218,7 @@ export default function MessagesPage() {
             className="w-full sm:w-96 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
           />
           <div className="text-sm text-gray-600">
-            Mostrando {paginated.length} de {filtered.length} mensajes
+            Mostrando {paginated.length} de {total} mensajes
           </div>
         </div>
 
@@ -326,7 +334,7 @@ export default function MessagesPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          className="inline-flex items-center px-3 py-1.5 rounded-md bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"
+                          className="inline-flex items-center px-3 py-1.5 rounded-md bg-primary text-white text-xs font-semibold hover:bg-primary-dark transition-colors"
                           onClick={() => {
                             setSelectedMessage(message);
                             setShowDetails(true);
@@ -354,7 +362,7 @@ export default function MessagesPage() {
                     </td>
                   </tr>
                 ))}
-                {!filtered.length && !loading && (
+                {!paginated.length && !loading && (
                   <tr>
                     <td className="px-6 py-4 text-sm text-gray-500" colSpan={6}>
                       No hay mensajes todavía.

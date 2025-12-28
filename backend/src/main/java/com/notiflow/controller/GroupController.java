@@ -1,7 +1,8 @@
 package com.notiflow.controller;
 
-import com.notiflow.dto.GroupDto;
 import com.notiflow.dto.GroupRequest;
+import com.notiflow.dto.GroupDto;
+import com.notiflow.dto.GroupListResponse;
 import com.notiflow.service.GroupService;
 import com.notiflow.service.AccessControlService;
 import com.notiflow.util.CurrentUser;
@@ -10,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Optional;
 
 @RestController
@@ -26,20 +26,25 @@ public class GroupController {
     }
 
     @GetMapping
-    public ResponseEntity<List<GroupDto>> list(
+    public ResponseEntity<GroupListResponse> list(
             @RequestParam(value = "schoolId", required = false) String schoolIdParam,
             @RequestParam(value = "year", required = false) String year,
+            @RequestParam(value = "q", required = false) String query,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "pageSize", defaultValue = "50") int pageSize
     ) {
         CurrentUser user = CurrentUser.fromContext()
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        accessControlService.check(user, "groups.list", schoolIdParam != null ? schoolIdParam : user.schoolId(), Optional.empty());
-        String schoolId = user.schoolId();
-        if ("global".equalsIgnoreCase(schoolId) && schoolIdParam != null && !schoolIdParam.isBlank()) {
-            schoolId = schoolIdParam;
+        String requestedSchool = (schoolIdParam == null || schoolIdParam.isBlank()) ? user.schoolId() : schoolIdParam;
+
+        // Si es superadmin (schoolId=global) y no se especifica colegio, listamos todo
+        if ("global".equalsIgnoreCase(user.schoolId()) && (schoolIdParam == null || schoolIdParam.isBlank())) {
+            accessControlService.check(user, "groups.list", "global", Optional.empty());
+            return ResponseEntity.ok(groupService.listAll(year, query, page, pageSize));
         }
-        return ResponseEntity.ok(groupService.listBySchool(schoolId, year, page, pageSize));
+
+        accessControlService.check(user, "groups.list", requestedSchool, Optional.empty());
+        return ResponseEntity.ok(groupService.listBySchool(requestedSchool, year, query, page, pageSize));
     }
 
     @PostMapping

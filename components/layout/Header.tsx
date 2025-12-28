@@ -206,7 +206,7 @@ export const Header: React.FC = () => {
                       <Link
                         key={item.href}
                         href={item.href}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:border-primary hover:bg-green-50 text-sm font-medium text-gray-700"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:border-primary hover:bg-primary/10 text-sm font-medium text-gray-700"
                         onClick={() => setMobileMenuOpen(false)}
                       >
                         <Icon size={16} className="text-primary" />

@@ -56,19 +56,35 @@ export default function GroupsPage() {
   const [error, setError] = useState('');
   const [searchUser, setSearchUser] = useState('');
   const [searchGroup, setSearchGroup] = useState('');
+  const [debouncedSearchGroup, setDebouncedSearchGroup] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canManageGroups) return;
     loadUsers();
-    loadGroups();
     if (isGlobalAdmin) loadSchools();
     if (!isGlobalAdmin && user?.schoolId) {
       setGroupForm((prev) => ({ ...prev, schoolId: user.schoolId }));
     }
   }, [canManageGroups, isGlobalAdmin, user]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearchGroup(searchGroup.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchGroup]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchGroup, isGlobalAdmin ? groupForm.schoolId : user?.schoolId]);
+
+  useEffect(() => {
+    if (!canManageGroups) return;
+    loadGroups();
+  }, [canManageGroups, debouncedSearchGroup, page, isGlobalAdmin, groupForm.schoolId]);
 
   const loadUsers = async () => {
     setLoadingUsers(true);
@@ -122,8 +138,18 @@ export default function GroupsPage() {
     setError('');
     try {
       const schoolIdParam = isGlobalAdmin ? groupForm.schoolId || undefined : undefined;
-      const res = await apiClient.getGroups(schoolIdParam);
-      setGroups(res.data || []);
+      const res = await apiClient.getGroups(
+        schoolIdParam,
+        undefined,
+        debouncedSearchGroup || undefined,
+        page,
+        pageSize
+      );
+      const data = res.data || {};
+      const items = data.items ?? data ?? [];
+      setGroups(items);
+      setTotal(data.total ?? items.length ?? 0);
+      setHasMore(data.hasMore ?? false);
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -136,17 +162,8 @@ export default function GroupsPage() {
     }
   };
 
-  const filteredGroups = useMemo(() => {
-    const term = searchGroup.toLowerCase();
-    if (!term) return groups;
-    return groups.filter((g) => g.name?.toLowerCase().includes(term) || g.description?.toLowerCase().includes(term));
-  }, [groups, searchGroup]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / pageSize));
-  const paginatedGroups = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredGroups.slice(start, start + pageSize);
-  }, [filteredGroups, page]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const paginatedGroups = groups;
 
   if (!canManageGroups) {
     return (
@@ -368,7 +385,7 @@ export default function GroupsPage() {
               <button
                 type="submit"
                 disabled={savingGroup}
-                className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+                className="px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
               >
                 {savingGroup ? 'Guardando...' : editingId ? 'Actualizar grupo' : 'Crear grupo'}
               </button>
@@ -395,11 +412,13 @@ export default function GroupsPage() {
                 value={searchGroup}
                 onChange={(e) => {
                   setSearchGroup(e.target.value);
-                  setPage(1);
                 }}
                 placeholder="Buscar grupo"
                 className="w-48 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
               />
+              <span className="text-xs text-gray-500">
+                Mostrando {paginatedGroups.length} de {total} grupo(s)
+              </span>
               <button
                 type="button"
                 onClick={loadGroups}
@@ -410,7 +429,7 @@ export default function GroupsPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {filteredGroups.slice((page - 1) * pageSize, page * pageSize).map((g) => (
+            {paginatedGroups.map((g) => (
               <div
                 key={g.id}
                 className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow"
@@ -439,7 +458,7 @@ export default function GroupsPage() {
                 </div>
               </div>
             ))}
-            {!filteredGroups.length && (
+            {!paginatedGroups.length && (
               <div className="text-sm text-gray-500">No hay grupos registrados.</div>
             )}
           </div>

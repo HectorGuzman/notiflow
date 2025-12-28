@@ -18,10 +18,16 @@ export default function DashboardPage() {
   const canSeeMessages = hasPermission('messages.list');
   const canSeeReports = hasPermission('reports.view');
   const canSeeUsers = hasPermission('users.list');
+  const canSeeStudents =
+    hasPermission('students.list') ||
+    hasPermission('students.create') ||
+    hasPermission('students.update') ||
+    hasPermission('students.delete');
   const isSuperAdmin = (currentUser?.role || '').toLowerCase() === 'superadmin' || hasPermission('*');
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [schools, setSchools] = useState<SchoolItem[]>([]);
+  const [studentCount, setStudentCount] = useState(0);
   const [appActiveBySchool, setAppActiveBySchool] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -31,11 +37,25 @@ export default function DashboardPage() {
       try {
         const msgPromise = apiClient.getMessages({ year });
         const usrPromise = canSeeUsers ? apiClient.getUsers() : Promise.resolve({ data: [] });
+        const studentPromise = canSeeStudents
+          ? apiClient.getStudents({ page: 1, pageSize: 1 })
+          : Promise.resolve({ data: { items: [], total: 0 } });
         const schPromise = isSuperAdmin ? apiClient.getSchools() : Promise.resolve({ data: [] });
         const usagePromise = isSuperAdmin ? apiClient.getUsageMetrics() : Promise.resolve({ data: {} });
-        const [msgRes, usrRes, schRes, usageRes] = await Promise.all([msgPromise, usrPromise, schPromise, usagePromise]);
-        setMessages(msgRes.data || []);
+        const [msgRes, usrRes, studentRes, schRes, usageRes] = await Promise.all([
+          msgPromise,
+          usrPromise,
+          studentPromise,
+          schPromise,
+          usagePromise,
+        ]);
+        const msgData = msgRes.data || {};
+        const msgItems = (msgData as any).items ?? msgData ?? [];
+        setMessages(msgItems);
         setUsers(usrRes.data || []);
+        const studentData = studentRes.data || {};
+        const studentTotal = studentData.total ?? studentData.items?.length ?? 0;
+        setStudentCount(studentTotal);
         setSchools((schRes.data || []).map((s: any) => ({ id: s.id, name: s.name })));
         const appMap = (usageRes.data?.appActiveBySchool as Record<string, number> | undefined) || {};
         setAppActiveBySchool(appMap);
@@ -51,6 +71,9 @@ export default function DashboardPage() {
   const stats = useMemo(
     () => {
       const base = [{ label: 'Mensajes del año', value: messages.length }];
+      if (canSeeStudents) {
+        base.push({ label: 'Estudiantes', value: studentCount });
+      }
       if (canSeeUsers) {
         base.push({ label: 'Usuarios', value: users.length });
         base.push({
@@ -60,7 +83,7 @@ export default function DashboardPage() {
       }
       return base;
     },
-    [messages.length, users, canSeeUsers]
+    [messages.length, users, canSeeUsers, canSeeStudents, studentCount]
   );
 
   const schoolBreakdown = useMemo(() => {
@@ -149,7 +172,7 @@ export default function DashboardPage() {
           {canCreateMessage && (
             <Link
               href="/messages/new"
-              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-green-700 transition-colors"
+              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-white font-medium hover:bg-primary-dark transition-colors"
             >
               + Enviar mensaje
             </Link>

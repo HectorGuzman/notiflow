@@ -8,7 +8,7 @@ class APIClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 20000, // aumentamos timeout para conexiones lentas a Cloud Run
+      timeout: 20000, // llamadas normales
       headers: {
         'Content-Type': 'application/json',
       },
@@ -102,6 +102,51 @@ class APIClient {
     return this.client.delete(`/messages/${id}`);
   }
 
+  async getStudents(params?: any) {
+    return this.client.get('/students', { params });
+  }
+
+  async createStudent(data: {
+    schoolId?: string;
+    year?: string;
+    course?: string;
+    run?: string;
+    gender?: string;
+    firstName: string;
+    lastNameFather?: string;
+    lastNameMother?: string;
+    address?: string;
+    commune?: string;
+    email?: string;
+    phone?: string;
+    guardianFirstName?: string;
+    guardianLastName?: string;
+  }) {
+    return this.client.post('/students', data);
+  }
+
+  async updateStudent(
+    id: string,
+    data: {
+      schoolId?: string;
+      year?: string;
+      course?: string;
+      run?: string;
+      gender?: string;
+      firstName: string;
+      lastNameFather?: string;
+      lastNameMother?: string;
+      address?: string;
+      commune?: string;
+      email?: string;
+      phone?: string;
+      guardianFirstName?: string;
+      guardianLastName?: string;
+    }
+  ) {
+    return this.client.put(`/students/${id}`, data);
+  }
+
   // Datos de escuela
   async getSchoolData() {
     return this.client.get('/school');
@@ -125,10 +170,6 @@ class APIClient {
     return this.client.post(`/schools/${id}/logo`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-  }
-
-  async getStudents(courseId?: string) {
-    return this.client.get('/students', { params: { courseId } });
   }
 
   async getCourses(levelId?: string) {
@@ -168,8 +209,8 @@ class APIClient {
     return this.client.get('/schools');
   }
 
-  async getGroups(schoolId?: string, year?: string) {
-    return this.client.get('/groups', { params: { schoolId, year } });
+  async getGroups(schoolId?: string, year?: string, q?: string, page?: number, pageSize?: number) {
+    return this.client.get('/groups', { params: { schoolId, year, q, page, pageSize } });
   }
 
   // Eventos
@@ -234,6 +275,17 @@ class APIClient {
 
   async updateAiPolicy(data: { rewritePrompt: string; moderationRules: string[] }) {
     return this.client.put('/ai/policy', data);
+  }
+
+  // Importación de estudiantes (solo superadmin)
+  async importStudentsCsv(file: File, schoolId: string) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('schoolId', schoolId);
+    return this.client.post('/import/students', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000, // hasta 3 minutos para imports grandes
+    });
   }
 }
 

@@ -37,7 +37,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     sent: {
       icon: FiCheckCircle,
       label: 'Enviado',
-      color: 'text-green-600 bg-green-100',
+      color: 'text-primary bg-primary/10',
     },
     failed: {
       icon: FiAlertCircle,

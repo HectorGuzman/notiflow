@@ -46,6 +46,16 @@ type Template = {
   content: string;
 };
 
+type StudentRecipient = {
+  id: string;
+  firstName?: string;
+  lastNameFather?: string;
+  lastNameMother?: string;
+  email?: string;
+  course?: string;
+  year?: string;
+};
+
 export default function NewMessagePage() {
   const { year } = useYearStore();
   const hasPermission = useAuthStore((state) => state.hasPermission);
@@ -72,12 +82,21 @@ export default function NewMessagePage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [moderationInfo, setModerationInfo] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [debouncedStudentSearch, setDebouncedStudentSearch] = useState('');
+  const [groupSearch, setGroupSearch] = useState('');
   const [channels, setChannels] = useState<string[]>(['email', 'app']);
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState('');
+  const [students, setStudents] = useState<StudentRecipient[]>([]);
+  const [studentsTotal, setStudentsTotal] = useState(0);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [studentsError, setStudentsError] = useState('');
+  const [studentCache, setStudentCache] = useState<Record<string, StudentRecipient>>({});
   const [groups, setGroups] = useState<{ id: string; name: string; memberIds: string[] }[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [groupsError, setGroupsError] = useState('');
@@ -86,6 +105,10 @@ export default function NewMessagePage() {
   const [sendSuccess, setSendSuccess] = useState('');
   const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
   const [step, setStep] = useState(1);
+  const [userPage, setUserPage] = useState(1);
+  const userPageSize = 12;
+  const [studentPage, setStudentPage] = useState(1);
+  const studentPageSize = 10;
 
   useEffect(() => {
     if (!canCreate) return;
@@ -126,7 +149,8 @@ export default function NewMessagePage() {
       setGroupsError('');
       try {
         const res = await apiClient.getGroups(undefined, year);
-        setGroups(res.data || []);
+        const data = res.data || [];
+        setGroups((data as any).items ?? data ?? []);
       } catch (err: any) {
         const msg =
           err?.response?.data?.message ||
@@ -140,6 +164,43 @@ export default function NewMessagePage() {
     };
     loadGroups();
   }, [canCreate, year]);
+
+  useEffect(() => {
+    if (!canCreate) return;
+    const loadStudents = async () => {
+      setLoadingStudents(true);
+      setStudentsError('');
+      try {
+        const res = await apiClient.getStudents({
+          year: year || undefined,
+          page: studentPage,
+          pageSize: studentPageSize,
+          q: debouncedStudentSearch || undefined,
+        });
+        const data = res.data || {};
+        const items = data.items || [];
+        setStudents(items);
+        setStudentsTotal(data.total ?? (data.items?.length || 0));
+        setStudentCache((prev) => {
+          const next = { ...prev };
+          items.forEach((s: StudentRecipient) => {
+            next[s.id] = s;
+          });
+          return next;
+        });
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          'No se pudieron cargar los estudiantes';
+        setStudentsError(msg);
+      } finally {
+        setLoadingStudents(false);
+      }
+    };
+    loadStudents();
+  }, [canCreate, year, studentPage, debouncedStudentSearch, studentPageSize]);
 
   const fileToBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -163,10 +224,14 @@ export default function NewMessagePage() {
       setSendError('Escribe el contenido del mensaje.');
       return;
     }
-    const emails = users
+    const userEmails = users
       .filter((u) => selectedUserIds.includes(u.id))
       .map((u) => u.email)
-      .filter(Boolean);
+      .filter((e): e is string => Boolean(e));
+    const studentEmails = selectedStudentIds
+      .map((id) => studentCache[id]?.email)
+      .filter((e): e is string => Boolean(e));
+    const emails = Array.from(new Set([...userEmails, ...studentEmails]));
     if (!emails.length) {
       setSendError('Selecciona al menos un usuario con correo.');
       return;
@@ -436,6 +501,10 @@ export default function NewMessagePage() {
     setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
   };
 
+  const toggleStudent = (id: string) => {
+    setSelectedStudentIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
+  };
+
   const filteredUsers = useMemo(() => {
     if (!search.trim()) return users;
     const term = search.toLowerCase();
@@ -445,6 +514,64 @@ export default function NewMessagePage() {
         u.email?.toLowerCase().includes(term)
     );
   }, [search, users]);
+
+  const filteredGroups = useMemo(() => {
+    if (!groupSearch.trim()) return groups;
+    const term = groupSearch.toLowerCase();
+    return groups.filter((g) => g.name?.toLowerCase().includes(term));
+  }, [groupSearch, groups]);
+
+  useEffect(() => {
+    setUserPage(1);
+  }, [search]);
+
+  useEffect(() => {
+    setStudentPage(1);
+  }, [studentSearch]);
+
+  useEffect(() => {
+    setStudentPage(1);
+  }, [year]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedStudentSearch(studentSearch.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [studentSearch]);
+
+  const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const paginatedUsers = useMemo(() => {
+    const start = (userPage - 1) * userPageSize;
+    return filteredUsers.slice(start, start + userPageSize);
+  }, [filteredUsers, userPage, userPageSize]);
+
+  const selectedRecipients = useMemo(
+    () => users.filter((u) => selectedUserIds.includes(u.id)),
+    [users, selectedUserIds]
+  );
+
+  const studentTotalPages = Math.max(1, Math.ceil(studentsTotal / studentPageSize));
+  const paginatedStudents = students;
+  const selectedGroupRecipients = useMemo(
+    () => groups.filter((g) => selectedGroups.includes(g.id)),
+    [groups, selectedGroups]
+  );
+  const selectedStudentRecipients = useMemo(
+    () => selectedStudentIds.map((id) => studentCache[id]).filter(Boolean),
+    [selectedStudentIds, studentCache]
+  );
+
+  const allSelectedRecipients = useMemo(
+    () => [
+      ...selectedRecipients.map((u) => ({ id: `user-${u.id}`, label: u.name || u.email, email: u.email, type: 'Usuario' })),
+      ...selectedStudentRecipients.map((s) => ({
+        id: `student-${s.id}`,
+        label: `${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim() || s.email || 'Estudiante',
+        email: s.email,
+        type: 'Estudiante',
+      })),
+    ],
+    [selectedRecipients, selectedStudentRecipients]
+  );
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -506,12 +633,22 @@ export default function NewMessagePage() {
   };
 
   const toggleSelectFiltered = () => {
-    const ids = filteredUsers.map((u) => u.id);
+    const ids = paginatedUsers.map((u) => u.id);
     const allSelected = ids.every((id) => selectedUserIds.includes(id));
     if (allSelected) {
       setSelectedUserIds((prev) => prev.filter((id) => !ids.includes(id)));
     } else {
       setSelectedUserIds((prev) => Array.from(new Set([...prev, ...ids])));
+    }
+  };
+
+  const toggleSelectStudents = () => {
+    const ids = paginatedStudents.map((s) => s.id);
+    const allSelected = ids.every((id) => selectedStudentIds.includes(id));
+    if (allSelected) {
+      setSelectedStudentIds((prev) => prev.filter((id) => !ids.includes(id)));
+    } else {
+      setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...ids])));
     }
   };
 
@@ -527,7 +664,7 @@ export default function NewMessagePage() {
           <div className="mt-4 flex gap-3">
             <Link
               href="/messages"
-              className="inline-flex px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-green-700 transition-colors"
+              className="inline-flex px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors"
             >
               Ver historial
             </Link>
@@ -625,7 +762,7 @@ export default function NewMessagePage() {
                   <button
                     type="button"
                     onClick={() => setShowTemplatesModal(true)}
-                    className="px-4 py-2 border border-primary text-primary rounded-lg font-medium hover:bg-green-50 transition-colors"
+                    className="px-4 py-2 border border-primary text-primary rounded-lg font-medium hover:bg-primary/10 transition-colors"
                   >
                     Crear o actualizar plantillas
                   </button>
@@ -687,7 +824,7 @@ export default function NewMessagePage() {
                     type="button"
                     onClick={handleAiRewriteModerate}
                     disabled={aiLoading}
-                    className="px-3 py-1 rounded-full border border-primary text-primary font-semibold hover:bg-green-50 disabled:opacity-50 flex items-center gap-2"
+                    className="px-3 py-1 rounded-full border border-primary text-primary font-semibold hover:bg-primary/10 disabled:opacity-50 flex items-center gap-2"
                   >
                     {aiLoading ? (
                       <span className="flex items-center gap-1">
@@ -804,89 +941,313 @@ export default function NewMessagePage() {
             <div className="space-y-3 border border-gray-200 rounded-lg p-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-gray-900">3. Destinatarios</h2>
-                {(selectedUserIds.length > 0 || selectedGroups.length > 0) && (
+                {(selectedUserIds.length > 0 || selectedStudentIds.length > 0 || selectedGroups.length > 0) && (
                   <span className="text-xs text-gray-600">
-                    {selectedUserIds.length} usuario(s) • {selectedGroups.length} grupo(s)
+                    {selectedUserIds.length + selectedStudentIds.length} persona(s) • {selectedGroups.length} grupo(s)
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {groups.map((grp) => (
-                  <label key={grp.id} className="flex items-center gap-2 text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 hover:border-primary cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="text-primary"
-                      checked={selectedGroups.includes(grp.id)}
-                      onChange={() => toggleGroup(grp.id)}
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">{grp.name}</p>
-                      <p className="text-xs text-gray-500">{grp.memberIds?.length || 0} miembro(s)</p>
-                    </div>
-                  </label>
-                ))}
-                {!groups.length && (
-                  <p className="text-sm text-gray-500 col-span-2">No hay grupos disponibles.</p>
-                )}
-                {loadingGroups && (
-                  <p className="text-sm text-gray-500 col-span-2">Cargando grupos...</p>
-                )}
-                {groupsError && (
-                  <p className="text-sm text-red-600 col-span-2">{groupsError}</p>
-                )}
-              </div>
 
-              <div className="space-y-3">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div className="flex items-center gap-2 w-full">
+              <div className="space-y-4">
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Grupos</p>
+                      <p className="text-sm font-semibold text-gray-900">Selecciona grupos</p>
+                    </div>
+                    <span className="text-xs text-gray-500">{filteredGroups.length} encontrados</span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <input
                       type="search"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Buscar por nombre o email"
+                      value={groupSearch}
+                      onChange={(e) => setGroupSearch(e.target.value)}
+                      placeholder="Buscar grupo"
                       className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
                     />
+                    <span className="text-xs text-gray-500">
+                      Seleccionados: {selectedGroups.length}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <button
-                      type="button"
-                      onClick={toggleSelectFiltered}
-                      className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 font-semibold hover:border-primary hover:text-primary transition-colors shadow-sm"
-                    >
-                      {filteredUsers.length &&
-                      filteredUsers.every((u) => selectedUserIds.includes(u.id))
-                        ? 'Deseleccionar visibles'
-                        : 'Seleccionar visibles'}
-                    </button>
-                    <span className="text-xs text-gray-500">{filteredUsers.length} resultado(s)</span>
+                  {loadingGroups && <p className="text-sm text-gray-500">Cargando grupos...</p>}
+                  {groupsError && <p className="text-sm text-red-600">{groupsError}</p>}
+                  {!loadingGroups && !groupsError && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {filteredGroups.map((grp) => (
+                        <label
+                          key={grp.id}
+                          className={`flex items-center gap-2 text-sm text-gray-700 border rounded-lg px-3 py-2 cursor-pointer transition ${
+                            selectedGroups.includes(grp.id)
+                              ? 'border-primary bg-primary/10'
+                              : 'border-gray-200 hover:border-primary'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="text-primary"
+                            checked={selectedGroups.includes(grp.id)}
+                            onChange={() => toggleGroup(grp.id)}
+                          />
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{grp.name}</p>
+                            <p className="text-xs text-gray-500">{grp.memberIds?.length || 0} miembro(s)</p>
+                          </div>
+                        </label>
+                      ))}
+                      {!groups.length && (
+                        <p className="text-sm text-gray-500 col-span-2">No hay grupos disponibles.</p>
+                      )}
+                      {groups.length > 0 && !filteredGroups.length && (
+                        <p className="text-sm text-gray-500 col-span-2">Sin coincidencias para la búsqueda.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div className="w-full">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Usuarios</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <input
+                          type="search"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder="Buscar por nombre o email"
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={toggleSelectFiltered}
+                          className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 font-semibold hover:border-primary hover:text-primary transition-colors shadow-sm"
+                        >
+                          {paginatedUsers.length &&
+                          paginatedUsers.every((u) => selectedUserIds.includes(u.id))
+                            ? 'Deseleccionar visibles'
+                            : 'Seleccionar visibles'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 flex flex-col items-start sm:items-end">
+                      <span>{filteredUsers.length} resultado(s)</span>
+                      <span>Mostrando página {userPage} de {userTotalPages}</span>
+                    </div>
+                  </div>
+
+                  {loadingUsers && <p className="text-sm text-gray-500">Cargando usuarios...</p>}
+                  {usersError && <p className="text-sm text-red-600">{usersError}</p>}
+                  {!loadingUsers && !usersError && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-auto pr-1">
+                        {paginatedUsers.map((u) => (
+                          <label
+                            key={u.id}
+                            className={`flex items-center gap-2 text-sm text-gray-700 border rounded-lg px-3 py-2 cursor-pointer transition ${
+                              selectedUserIds.includes(u.id)
+                                ? 'border-primary bg-primary/10'
+                                : 'border-gray-200 hover:border-primary'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="text-primary"
+                              checked={selectedUserIds.includes(u.id)}
+                              onChange={() => toggleUser(u.id)}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900 truncate">{u.name}</p>
+                              <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                            </div>
+                          </label>
+                        ))}
+                        {!users.length && (
+                          <p className="text-sm text-gray-500 col-span-2">No hay usuarios disponibles.</p>
+                        )}
+                        {users.length > 0 && !filteredUsers.length && (
+                          <p className="text-sm text-gray-500 col-span-2">Sin coincidencias para la búsqueda.</p>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm text-gray-600">
+                        <button
+                          type="button"
+                          disabled={userPage <= 1}
+                          onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50"
+                        >
+                          Anterior
+                        </button>
+                        <span>Página {userPage} de {userTotalPages}</span>
+                        <button
+                          type="button"
+                          disabled={userPage >= userTotalPages}
+                          onClick={() => setUserPage((p) => Math.min(userTotalPages, p + 1))}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50"
+                        >
+                          Siguiente
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div className="w-full">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Estudiantes</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <input
+                          type="search"
+                          value={studentSearch}
+                          onChange={(e) => setStudentSearch(e.target.value)}
+                          placeholder="Buscar por nombre, curso o email"
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={toggleSelectStudents}
+                          className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 font-semibold hover:border-primary hover:text-primary transition-colors shadow-sm"
+                        >
+                          {paginatedStudents.length &&
+                          paginatedStudents.every((u) => selectedStudentIds.includes(u.id))
+                            ? 'Deseleccionar visibles'
+                            : 'Seleccionar visibles'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 flex flex-col items-start sm:items-end">
+                      <span>{studentsTotal} total</span>
+                      <span>Mostrando página {studentPage} de {studentTotalPages}</span>
+                    </div>
+                  </div>
+
+                  {loadingStudents && <p className="text-sm text-gray-500">Cargando estudiantes...</p>}
+                  {studentsError && <p className="text-sm text-red-600">{studentsError}</p>}
+                  {!loadingStudents && !studentsError && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-auto pr-1">
+                        {paginatedStudents.map((s) => (
+                          <label
+                            key={s.id}
+                            className={`flex items-center gap-2 text-sm text-gray-700 border rounded-lg px-3 py-2 cursor-pointer transition ${
+                              selectedStudentIds.includes(s.id)
+                                ? 'border-primary bg-primary/10'
+                                : 'border-gray-200 hover:border-primary'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="text-primary"
+                              checked={selectedStudentIds.includes(s.id)}
+                              onChange={() => toggleStudent(s.id)}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900 truncate">
+                                {`${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim() || 'Sin nombre'}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {s.email || 'Sin correo'} {s.course ? `• ${s.course}` : ''} {s.year ? `• ${s.year}` : ''}
+                              </p>
+                            </div>
+                          </label>
+                        ))}
+                        {!students.length && (
+                          <p className="text-sm text-gray-500 col-span-2">No hay estudiantes disponibles.</p>
+                        )}
+                        {studentsTotal > 0 && !paginatedStudents.length && (
+                          <p className="text-sm text-gray-500 col-span-2">Sin coincidencias para la búsqueda.</p>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm text-gray-600">
+                        <button
+                          type="button"
+                          disabled={studentPage <= 1}
+                          onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50"
+                        >
+                          Anterior
+                        </button>
+                        <span>Página {studentPage} de {studentTotalPages}</span>
+                        <button
+                          type="button"
+                          disabled={studentPage >= studentTotalPages}
+                          onClick={() => setStudentPage((p) => Math.min(studentTotalPages, p + 1))}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50"
+                        >
+                          Siguiente
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-gray-900 text-sm">
+                      Destinatarios seleccionados ({allSelectedRecipients.length + selectedGroups.length})
+                    </p>
+                    {!!(allSelectedRecipients.length + selectedGroups.length) && (
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 hover:text-red-700"
+                        onClick={() => {
+                          setSelectedUserIds([]);
+                          setSelectedStudentIds([]);
+                          setSelectedGroups([]);
+                        }}
+                      >
+                        Limpiar selección
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {selectedGroupRecipients.map((g) => (
+                      <span
+                        key={`group-${g.id}`}
+                        className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs border border-primary/30"
+                      >
+                        <span className="font-semibold truncate">{g.name}</span>
+                        <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded">Grupo</span>
+                        <button
+                          type="button"
+                          className="text-primary hover:text-primary-dark"
+                          onClick={() => toggleGroup(g.id)}
+                          aria-label="Eliminar grupo"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {allSelectedRecipients.map((rec) => (
+                      <span
+                        key={rec.id}
+                        className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-100"
+                      >
+                        <span className="font-semibold truncate">{rec.label}</span>
+                        {rec.email && <span className="text-blue-500 truncate">{rec.email}</span>}
+                        <span className="text-[10px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">{rec.type}</span>
+                        <button
+                          type="button"
+                          className="text-blue-500 hover:text-blue-700"
+                          onClick={() => {
+                            if (rec.id.startsWith('user-')) {
+                              const id = rec.id.replace('user-', '');
+                              toggleUser(id);
+                            } else {
+                              const id = rec.id.replace('student-', '');
+                              toggleStudent(id);
+                            }
+                          }}
+                          aria-label="Eliminar destinatario"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                    {!allSelectedRecipients.length && !selectedGroupRecipients.length && (
+                      <span className="text-xs text-gray-500">Aún no seleccionas destinatarios.</span>
+                    )}
                   </div>
                 </div>
-                {loadingUsers && <p className="text-sm text-gray-500">Cargando usuarios...</p>}
-                {usersError && <p className="text-sm text-red-600">{usersError}</p>}
-                {!loadingUsers && !usersError && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-80 overflow-auto pr-1">
-                    {filteredUsers.map((u) => (
-                      <label key={u.id} className="flex items-center gap-2 text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 hover:border-primary cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="text-primary"
-                          checked={selectedUserIds.includes(u.id)}
-                          onChange={() => toggleUser(u.id)}
-                        />
-                        <div>
-                          <p className="font-medium text-gray-900">{u.name}</p>
-                          <p className="text-xs text-gray-500">{u.email}</p>
-                        </div>
-                      </label>
-                    ))}
-                    {!users.length && (
-                      <p className="text-sm text-gray-500 col-span-2">No hay usuarios disponibles.</p>
-                    )}
-                    {users.length > 0 && !filteredUsers.length && (
-                      <p className="text-sm text-gray-500 col-span-2">Sin coincidencias para la búsqueda.</p>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
             )}
@@ -1000,16 +1361,23 @@ export default function NewMessagePage() {
                     </div>
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900">Destinatarios ({selectedUserIds.length})</p>
+                    <p className="font-semibold text-gray-900">
+                      Destinatarios ({allSelectedRecipients.length + selectedGroupRecipients.length})
+                    </p>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {users
-                        .filter((u) => selectedUserIds.includes(u.id))
-                        .map((u) => (
-                          <span key={u.id} className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs">
-                            {u.email || u.name}
-                          </span>
-                        ))}
-                      {!selectedUserIds.length && <span className="text-gray-500 text-xs">—</span>}
+                      {selectedGroupRecipients.map((g) => (
+                        <span key={`summary-group-${g.id}`} className="px-2 py-1 rounded-full bg-primary/10 text-primary text-xs">
+                          {g.name || g.id} (grupo)
+                        </span>
+                      ))}
+                      {allSelectedRecipients.map((rec) => (
+                        <span key={rec.id} className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs">
+                          {rec.email || rec.label}
+                        </span>
+                      ))}
+                      {!allSelectedRecipients.length && !selectedGroupRecipients.length && (
+                        <span className="text-gray-500 text-xs">—</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1062,7 +1430,7 @@ export default function NewMessagePage() {
                 <button
                   type="button"
                   onClick={nextStep}
-                  className="w-full sm:flex-1 px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                    className="w-full sm:flex-1 px-6 py-3 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark transition-colors"
                 >
                   Siguiente →
                 </button>
@@ -1073,7 +1441,7 @@ export default function NewMessagePage() {
                     type="submit"
                     disabled={sendLoading}
                     className={`w-full sm:flex-1 px-6 py-3 bg-primary text-white rounded-lg font-semibold transition-colors ${
-                      sendLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-green-700'
+                      sendLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-primary-dark'
                     }`}
                   >
                     {sendLoading
@@ -1228,7 +1596,7 @@ export default function NewMessagePage() {
               <button
                 type="button"
                 onClick={handleAddTemplate}
-                className="px-5 py-2.5 bg-primary text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                className="px-5 py-2.5 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark transition-colors"
               >
                 Agregar plantilla
               </button>

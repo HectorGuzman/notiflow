@@ -7,6 +7,8 @@ import { useAuthStore } from '@/store';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 import { FiMail, FiLock } from 'react-icons/fi';
 import { apiClient } from '@/lib/api-client';
+import Image from 'next/image';
+import logo from '@/logos/Naranjo_Degradado.png';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -47,12 +49,12 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-primary to-secondary flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full shadow-lg mb-4">
-            <span className="text-3xl font-bold text-primary">N</span>
+        <div className="text-center mb-6 mt-4 flex flex-col items-center">
+          <div className="inline-flex items-center justify-center w-40 h-40 rounded-2xl overflow-hidden bg-white/80 shadow-lg">
+            <Image src={logo} alt="Notiflow" className="object-contain w-full h-full" priority />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2">Notiflow</h1>
-          <p className="text-green-100">Sistema de Mensajería Escolar</p>
+          <h1 className="text-3xl font-bold text-white mt-3">Notiflow</h1>
+          <p className="text-white text-sm mt-1">Comunicaciones inteligentes con IA para tu colegio</p>
         </div>
 
         {/* Login Form */}
@@ -113,7 +115,7 @@ export default function LoginPage() {
           <div className="mt-6 pt-4">
             <button
               type="button"
-              className="text-sm text-primary hover:text-green-700 transition-colors w-full text-center"
+              className="text-sm text-primary hover:text-primary-dark transition-colors w-full text-center"
               onClick={() => router.push('/forgot-password')}
             >
               ¿Olvidaste tu contraseña?
@@ -123,7 +125,18 @@ export default function LoginPage() {
 
         {/* Footer */}
         <div className="text-center mt-8 text-white text-sm">
-          <p>© 2025 Notiflow. Todos los derechos reservados.</p>
+          <p>
+            © 2025 Notiflow. Todos los derechos reservados. Un producto de{' '}
+            <a
+              href="https://www.nodospa.cl"
+              target="_blank"
+              rel="noreferrer"
+              className="underline font-semibold"
+            >
+              Nodo SpA
+            </a>
+            .
+          </p>
         </div>
       </div>
     </div>

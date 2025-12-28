@@ -98,7 +98,7 @@ export default function ForgotPasswordPage() {
           </div>
         )}
         {message && (
-          <div className="p-3 rounded-lg border border-green-200 bg-green-50 text-sm text-green-700">
+          <div className="p-3 rounded-lg border border-primary/30 bg-primary/10 text-sm text-primary">
             {message}
           </div>
         )}
@@ -121,7 +121,7 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+              className="w-full px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
             >
               {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
             </button>
@@ -153,7 +153,7 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60"
+              className="w-full px-4 py-2 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
             >
               {loading ? 'Actualizando...' : 'Actualizar contraseña'}
             </button>

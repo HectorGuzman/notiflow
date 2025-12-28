@@ -32,6 +32,7 @@ export default function EventsPage() {
   const role = (user?.role || '').toUpperCase();
   const canCreate =
     role === 'SUPERADMIN' || role === 'ADMIN' || role === 'TEACHER' || hasPermission('events.create');
+  const today = useMemo(() => new Date(), []);
 
   const [monthCursor, setMonthCursor] = useState(() => {
     const now = new Date();
@@ -65,6 +66,7 @@ export default function EventsPage() {
   // Filters
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [showUpcomingOnly, setShowUpcomingOnly] = useState(true);
 
   const loadEvents = async () => {
     setLoadingEvents(true);
@@ -114,7 +116,10 @@ export default function EventsPage() {
         apiClient.getGroups(),
       ]);
       if (usersRes.status === 'fulfilled') setUsers(usersRes.value.data || []);
-      if (groupsRes.status === 'fulfilled') setGroups(groupsRes.value.data || []);
+      if (groupsRes.status === 'fulfilled') {
+        const data = groupsRes.value.data || [];
+        setGroups((data as any).items ?? data ?? []);
+      }
     } finally {
       setLoadingRecipients(false);
     }
@@ -142,6 +147,34 @@ export default function EventsPage() {
         return da - db;
       });
   }, [events, search, filterType]);
+
+  const filteredByMode = useMemo(() => {
+    if (!showUpcomingOnly) return filteredEvents;
+    const now = new Date();
+    const in14Days = new Date();
+    in14Days.setDate(now.getDate() + 14);
+    return filteredEvents.filter((ev) => {
+      const start = new Date(ev.startDateTime || ev.createdAt || '').getTime();
+      return start >= now.getTime() - 24 * 60 * 60 * 1000 && start <= in14Days.getTime();
+    });
+  }, [filteredEvents, showUpcomingOnly]);
+
+  const stats = useMemo(() => {
+    const total = events.length;
+    const upcoming = filteredEvents.filter((ev) => {
+      const start = new Date(ev.startDateTime || ev.createdAt || '').getTime();
+      return start >= today.getTime() - 24 * 60 * 60 * 1000;
+    }).length;
+    const todayCount = events.filter((ev) => {
+      const start = new Date(ev.startDateTime || ev.createdAt || '');
+      const sameDay =
+        start.getFullYear() === today.getFullYear() &&
+        start.getMonth() === today.getMonth() &&
+        start.getDate() === today.getDate();
+      return sameDay;
+    }).length;
+    return { total, upcoming, today: todayCount };
+  }, [events, filteredEvents, today]);
 
   const toggleSelection = (id: string, list: string[], setter: (val: string[]) => void) => {
     if (list.includes(id)) {
@@ -202,6 +235,21 @@ export default function EventsPage() {
     }
   };
 
+  const startDuplicate = (ev: EventItem) => {
+    setTitle(ev.title || '');
+    setDescription(ev.description || '');
+    const start = ev.startDateTime ? new Date(ev.startDateTime) : new Date();
+    start.setDate(start.getDate() + 7);
+    const end = ev.endDateTime ? new Date(ev.endDateTime) : null;
+    if (end) end.setDate(end.getDate() + 7);
+    setStartDateTime(start.toISOString().slice(0, 16));
+    setEndDateTime(end ? end.toISOString().slice(0, 16) : '');
+    setEventType((ev.type as 'general' | 'schedule') || 'general');
+    setSelectedGroupIds(ev.audience?.groupIds || []);
+    setSelectedUserIds(ev.audience?.userIds || []);
+    setShowModal(true);
+  };
+
   const typePill = (type?: string) =>
     type === 'schedule'
       ? { label: 'Horario', color: 'bg-purple-100 text-purple-800' }
@@ -239,19 +287,41 @@ export default function EventsPage() {
       <div className="flex flex-col gap-6">
         <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <p className="text-sm text-gray-500">Agenda escolar</p>
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
               <FiCalendar />
-              Eventos y Agenda
+              Eventos y horarios
             </h1>
             <p className="text-gray-600">
-              Agenda de actividades del colegio y horarios escolares visibles para cada destinatario.
+              Planifica reuniones, clases especiales y actividades del colegio.
             </p>
           </div>
+          {canCreate && (
+            <Button onClick={() => setShowModal(true)}>
+              <FiPlus />
+              Nuevo evento
+            </Button>
+          )}
         </header>
 
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="p-4 shadow-sm">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Eventos del año</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+          </Card>
+          <Card className="p-4 shadow-sm">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Próximos 14 días</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.upcoming}</p>
+          </Card>
+          <Card className="p-4 shadow-sm">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Hoy</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.today}</p>
+          </Card>
+        </div>
+
         {/* Calendario compacto */}
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-3">
+        <Card className="p-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
             <button
               type="button"
               className="p-2 rounded-lg hover:bg-gray-100"
@@ -271,6 +341,27 @@ export default function EventsPage() {
             >
               <FiChevronRight />
             </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:border-primary"
+                onClick={() => {
+                  const now = new Date();
+                  setMonthCursor(new Date(now.getFullYear(), now.getMonth(), 1));
+                  setSelectedDay(now);
+                }}
+              >
+                Ir a hoy
+              </button>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={showUpcomingOnly}
+                  onChange={() => setShowUpcomingOnly((v) => !v)}
+                />
+                Solo próximos 14 días
+              </label>
+            </div>
           </div>
           <div className="grid grid-cols-7 text-center text-xs font-semibold text-gray-500 mb-2">
             {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d) => (
@@ -303,7 +394,7 @@ export default function EventsPage() {
                   }}
                   className={clsx(
                     'h-16 rounded-lg border text-sm flex flex-col items-center justify-center gap-1 transition-colors',
-                    isSelected ? 'border-primary bg-green-50' : 'border-gray-200 hover:bg-gray-50'
+                    isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 hover:bg-gray-50'
                   )}
                 >
                   <span className="font-semibold text-gray-800">{d.getDate()}</span>
@@ -348,7 +439,7 @@ export default function EventsPage() {
           )}
         </Card>
 
-        <Card className="p-4 flex flex-col gap-3">
+        <Card className="p-4 flex flex-col gap-3 shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="flex items-center gap-2 border rounded-lg px-3 py-2 bg-white">
               <FiSearch className="text-gray-500" />
@@ -377,7 +468,7 @@ export default function EventsPage() {
         </Card>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {(selectedDayKey ? eventsSelectedDay : filteredEvents).map((ev) => {
+          {(selectedDayKey ? eventsSelectedDay : filteredByMode).map((ev) => {
             const pill = typePill(ev.type);
             return (
               <Card key={ev.id} className="p-4 flex flex-col gap-3">
@@ -407,6 +498,45 @@ export default function EventsPage() {
                       {ev.audience?.userIds?.length || 0} personas • {ev.audience?.groupIds?.length || 0} grupos
                     </span>
                   </div>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                    {ev.audience?.groupIds?.slice(0, 3).map((g) => (
+                      <span key={g} className="px-2 py-1 bg-gray-100 rounded-full">{g}</span>
+                    ))}
+                    {(ev.audience?.groupIds?.length || 0) > 3 && (
+                      <span className="px-2 py-1 bg-gray-50 rounded-full">
+                        +{(ev.audience?.groupIds?.length || 0) - 3} grupos
+                      </span>
+                    )}
+                  </div>
+                  {canCreate && (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => startDuplicate(ev)}
+                      >
+                        Duplicar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setTitle(ev.title || '');
+                          setDescription(ev.description || '');
+                          setStartDateTime(ev.startDateTime?.slice(0, 16) || '');
+                          setEndDateTime(ev.endDateTime?.slice(0, 16) || '');
+                          setEventType((ev.type as 'general' | 'schedule') || 'general');
+                          setSelectedGroupIds(ev.audience?.groupIds || []);
+                          setSelectedUserIds(ev.audience?.userIds || []);
+                          setShowModal(true);
+                        }}
+                      >
+                        Editar borrador
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </Card>
             );
@@ -533,7 +663,7 @@ export default function EventsPage() {
                         return (
                           <span
                             key={id}
-                            className="inline-flex items-center gap-1 bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs"
+                            className="inline-flex items-center gap-1 bg-primary/15 text-primary px-3 py-1 rounded-full text-xs"
                           >
                             {g?.name || id}
                             <button type="button" onClick={() => toggleSelection(id, selectedGroupIds, setSelectedGroupIds)}>

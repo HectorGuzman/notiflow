@@ -128,7 +128,7 @@ export const Sidebar: React.FC = () => {
                   }
                   className={clsx(
                     'w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg transition-colors',
-                    'hover:bg-green-800'
+                    'hover:bg-primary/20'
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -152,8 +152,8 @@ export const Sidebar: React.FC = () => {
                         className={clsx(
                           'block px-4 py-2 rounded-lg text-sm transition-colors',
                           pathname === subitem.href
-                            ? 'bg-green-700 font-semibold'
-                            : 'hover:bg-green-800'
+                            ? 'bg-primary/20 font-semibold text-secondary'
+                            : 'hover:bg-primary/15'
                         )}
                       >
                         {subitem.label}
@@ -170,10 +170,10 @@ export const Sidebar: React.FC = () => {
               key={item.href}
               href={item.href || '#'}
               className={clsx(
-                'flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors',
+                'flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors text-white',
                 isActive
-                  ? 'bg-green-700 text-white'
-                  : 'hover:bg-green-800 text-green-50'
+                  ? 'bg-primary/25 text-white'
+                  : 'hover:bg-primary/20'
               )}
             >
               <Icon size={20} />
