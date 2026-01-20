@@ -204,4 +204,27 @@ public class UserService {
         String safeTenant = tenantId == null || tenantId.isBlank() ? "global" : tenantId;
         return firestore.collection("tenants").document(safeTenant).collection("users");
     }
+
+    public List<String> collectEmailsBySchool(String schoolId) {
+        try {
+            com.google.cloud.firestore.Query q = (schoolId == null || schoolId.isBlank())
+                    ? firestore.collectionGroup("users")
+                    : firestore.collectionGroup("users").whereEqualTo("schoolId", schoolId);
+            ApiFuture<QuerySnapshot> fut = q.get();
+            List<QueryDocumentSnapshot> docs = fut.get().getDocuments();
+            return docs.stream()
+                    .map(doc -> {
+                        UserDocument u = doc.toObject(UserDocument.class);
+                        return u != null ? u.getEmail() : null;
+                    })
+                    .filter(e -> e != null && !e.isBlank())
+                    .map(String::trim)
+                    .map(String::toLowerCase)
+                    .distinct()
+                    .toList();
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Error recopilando correos de usuarios", e);
+        }
+    }
 }

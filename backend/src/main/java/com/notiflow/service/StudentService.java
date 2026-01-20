@@ -13,6 +13,8 @@ import com.notiflow.dto.StudentRequest;
 import com.notiflow.dto.GuardianContact;
 import com.notiflow.model.StudentDocument;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.time.Instant;
@@ -26,6 +28,7 @@ public class StudentService {
 
     private final Firestore firestore;
     private static final int MAX_SEARCH_SCAN = 5000;
+    private static final Logger log = LoggerFactory.getLogger(StudentService.class);
 
     public StudentService(Firestore firestore) {
         this.firestore = firestore;
@@ -35,7 +38,7 @@ public class StudentService {
         try {
             StudentDocument s = new StudentDocument();
             s.setSchoolId(schoolId);
-            s.setYear(defaultValue(request.year(), String.valueOf(java.time.Year.now().getValue())));
+            s.setYear(String.valueOf(java.time.Year.now().getValue()));
             s.setCourse(defaultValue(request.course(), "N/A"));
             s.setRun(cleanRun(request.run()));
             s.setGender(defaultValue(request.gender(), ""));
@@ -121,7 +124,7 @@ public class StudentService {
             StudentDocument s = new StudentDocument();
             s.setId(existing.getId());
             s.setSchoolId(targetSchoolId);
-            s.setYear(defaultValue(request.year(), existing.getYear()));
+            s.setYear(String.valueOf(java.time.Year.now().getValue()));
             s.setCourse(defaultValue(request.course(), existing.getCourse()));
             s.setRun(request.run() != null ? cleanRun(request.run()) : existing.getRun());
             s.setGender(defaultValue(request.gender(), existing.getGender()));
@@ -247,7 +250,7 @@ public class StudentService {
         String guardiansConcat = "";
         if (s.getGuardians() != null) {
             guardiansConcat = s.getGuardians().stream()
-                    .map(g -> (g.name() == null ? "" : g.name()).toLowerCase() + " " + (g.email() == null ? "" : g.email().toLowerCase()))
+                    .map(g -> (g.getName() == null ? "" : g.getName()).toLowerCase() + " " + (g.getEmail() == null ? "" : g.getEmail().toLowerCase()))
                     .collect(Collectors.joining(" "));
         }
 
@@ -307,7 +310,8 @@ public class StudentService {
             return result;
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Error consultando estudiantes", e);
+            log.warn("Error consultando estudiantes por email {}: {}", email, e.getMessage());
+            return java.util.Collections.emptyList();
         }
     }
 
@@ -328,6 +332,45 @@ public class StudentService {
         return email.trim().toLowerCase();
     }
 
+    public List<String> collectRecipientEmails(String schoolId, String year) {
+        try {
+            Query q = tenantStudents(schoolId);
+            if (year != null && !year.isBlank()) {
+                q = q.whereEqualTo("year", year);
+            }
+            List<QueryDocumentSnapshot> docs = q.get().get().getDocuments();
+            List<String> emails = new ArrayList<>();
+            for (QueryDocumentSnapshot doc : docs) {
+                StudentDocument s = doc.toObject(StudentDocument.class);
+                if (s == null) continue;
+                if (s.getEmail() != null && !s.getEmail().isBlank()) {
+                    emails.add(normalizeEmail(s.getEmail()));
+                }
+                List<String> guardianEmails = s.getGuardianEmails() == null ? java.util.Collections.emptyList() : s.getGuardianEmails();
+                guardianEmails.stream()
+                        .filter(e -> e != null && !e.isBlank())
+                        .map(String::trim)
+                        .map(String::toLowerCase)
+                        .forEach(emails::add);
+                if (s.getGuardians() != null) {
+                    for (com.notiflow.dto.GuardianContact g : s.getGuardians()) {
+                        if (g != null && g.getEmail() != null && !g.getEmail().isBlank()) {
+                            emails.add(g.getEmail().trim().toLowerCase());
+                        }
+                    }
+                }
+            }
+            return emails.stream()
+                    .filter(e -> e != null && !e.isBlank())
+                    .map(String::toLowerCase)
+                    .distinct()
+                    .toList();
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Error recopilando correos de estudiantes/apoderados", e);
+        }
+    }
+
     private void applyGuardians(StudentDocument s, StudentRequest request, StudentDocument existing) {
         List<GuardianContact> guardians = request.guardians();
         List<GuardianContact> result = new ArrayList<>();
@@ -335,9 +378,9 @@ public class StudentService {
         if (guardians != null && !guardians.isEmpty()) {
             for (GuardianContact g : guardians) {
                 if (g == null) continue;
-                String name = capitalize(defaultValue(g.name(), ""));
-                String email = normalizeEmail(g.email());
-                String phone = defaultValue(g.phone(), "");
+                String name = capitalize(defaultValue(g.getName(), ""));
+                String email = normalizeEmail(g.getEmail());
+                String phone = defaultValue(g.getPhone(), "");
                 if (email.isBlank() && name.isBlank() && phone.isBlank()) continue;
                 result.add(new GuardianContact(name, email, phone));
             }
@@ -354,12 +397,12 @@ public class StudentService {
         }
 
         List<String> emails = result.stream()
-                .map(g -> normalizeEmail(g.email()))
+                .map(g -> normalizeEmail(g.getEmail()))
                 .filter(e -> !e.isBlank())
                 .distinct()
                 .collect(Collectors.toList());
 
-        s.setGuardianFirstName(result.isEmpty() ? "" : result.get(0).name());
+        s.setGuardianFirstName(result.isEmpty() ? "" : result.get(0).getName());
         s.setGuardianLastName(""); // deprecated; se deja vacío
         s.setGuardians(result);
         s.setGuardianEmails(emails);

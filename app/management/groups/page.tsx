@@ -35,6 +35,7 @@ type StudentItem = {
   lastNameFather?: string;
   lastNameMother?: string;
   email?: string;
+  guardians?: { name?: string; email?: string; phone?: string }[];
   schoolId?: string;
   course?: string;
 };
@@ -185,7 +186,13 @@ export default function GroupsPage() {
         .map((s) => ({
           id: s.id,
           name: `${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim(),
-          email: s.email,
+          email: (() => {
+            const emails = [
+              s.email,
+              ...(s.guardians || []).map((g) => g?.email).filter(Boolean),
+            ].filter(Boolean);
+            return emails[0];
+          })(),
           role: s.course || 'Alumno',
           badge: 'Alumno',
         })),
@@ -253,7 +260,7 @@ export default function GroupsPage() {
   if (!canManageGroups) {
     return (
       <ProtectedLayout>
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div className="glass-panel rounded-2xl p-6 soft-shadow">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
           <p className="text-gray-600">No tienes permisos para gestionar grupos.</p>
         </div>
@@ -371,7 +378,7 @@ export default function GroupsPage() {
           </div>
         )}
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+        <div className="glass-panel rounded-2xl soft-shadow p-6 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h2 className="text-xl font-semibold text-gray-900">Nuevo grupo</h2>
@@ -491,7 +498,7 @@ export default function GroupsPage() {
           </form>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-3">
+        <div className="glass-panel rounded-2xl soft-shadow p-6 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">Grupos creados</h2>
             <div className="flex items-center gap-3">

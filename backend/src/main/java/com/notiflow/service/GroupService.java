@@ -15,8 +15,13 @@ import com.notiflow.model.GroupDocument;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.Year;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -25,10 +30,16 @@ import java.util.stream.Collectors;
 public class GroupService {
 
     private final Firestore firestore;
+    private final StudentService studentService;
+    private final UserService userService;
     private static final int MAX_SEARCH_SCAN = 5000;
+    public static final String SYSTEM_ALL_STUDENTS = "ALL_STUDENTS";
+    public static final String SYSTEM_ALL_COMMUNITY = "ALL_COMMUNITY";
 
-    public GroupService(Firestore firestore) {
+    public GroupService(Firestore firestore, StudentService studentService, UserService userService) {
         this.firestore = firestore;
+        this.studentService = studentService;
+        this.userService = userService;
     }
 
     public List<String> findGroupsForMember(String email, String schoolId) {
@@ -45,6 +56,7 @@ public class GroupService {
     }
 
     public GroupListResponse listBySchool(String schoolId, String year, String query, int page, int pageSize) {
+        ensureDefaultGroups(schoolId, year);
         var baseCollection = tenantGroups(schoolId);
         var filtered = (year != null && !year.isBlank())
                 ? baseCollection.whereEqualTo("year", year)
@@ -76,7 +88,7 @@ public class GroupService {
                             GroupDocument g = doc.toObject(GroupDocument.class);
                             if (g == null) return null;
                             g.setId(doc.getId());
-                            return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt());
+                            return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt(), g.getSystem(), g.getSystemType());
                         })
                         .filter(g -> g != null && matchesQuery(g, normalizedQuery))
                         .collect(Collectors.toList());
@@ -98,7 +110,7 @@ public class GroupService {
                     GroupDocument g = doc.toObject(GroupDocument.class);
                     if (g == null) return null;
                     g.setId(doc.getId());
-                    return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt());
+                    return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt(), g.getSystem(), g.getSystemType());
                 }).filter(Objects::nonNull).collect(Collectors.toList());
                 boolean hasMore = (long) safePage * safeSize < total;
                 return new GroupListResponse(items, total, safePage, safeSize, hasMore);
@@ -174,11 +186,13 @@ public class GroupService {
                     ? request.year()
                     : String.valueOf(java.time.Year.now().getValue()));
             g.setCreatedAt(Instant.now());
+            g.setSystem(false);
+            g.setSystemType(null);
 
             DocumentReference ref = tenantGroups(schoolId).document(g.getId());
             ref.set(g).get();
 
-            return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt());
+            return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt(), g.getSystem(), g.getSystemType());
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Error creando grupo", e);
@@ -228,6 +242,7 @@ public class GroupService {
             existing.setYear(request.year() != null && !request.year().isBlank()
                     ? request.year()
                     : existing.getYear());
+            existing.setSystem(Boolean.FALSE.equals(existing.getSystem()) ? existing.getSystem() : existing.getSystem());
 
             if (originalSchoolId != null && !originalSchoolId.equalsIgnoreCase(targetSchoolId)) {
                 tenantGroups(targetSchoolId).document(id).set(existing).get();
@@ -235,7 +250,7 @@ public class GroupService {
             } else {
                 ref.set(existing).get();
             }
-            return new GroupDto(existing.getId(), existing.getName(), existing.getDescription(), existing.getMemberIds(), existing.getSchoolId(), existing.getYear(), existing.getCreatedAt());
+            return new GroupDto(existing.getId(), existing.getName(), existing.getDescription(), existing.getMemberIds(), existing.getSchoolId(), existing.getYear(), existing.getCreatedAt(), existing.getSystem(), existing.getSystemType());
         } catch (InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Error actualizando grupo", e);
@@ -278,5 +293,107 @@ public class GroupService {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Error eliminando grupo", e);
         }
+    }
+
+    public Optional<GroupDocument> findById(String id, String schoolId) {
+        try {
+            DocumentReference ref = tenantGroups(schoolId).document(id);
+            var snap = ref.get().get();
+            if (snap.exists()) {
+                GroupDocument g = snap.toObject(GroupDocument.class);
+                if (g != null) {
+                    g.setId(id);
+                    return Optional.of(g);
+                }
+            }
+            QueryDocumentSnapshot cg = firestore.collectionGroup("groups")
+                    .whereEqualTo("id", id)
+                    .limit(1)
+                    .get()
+                    .get()
+                    .getDocuments()
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+            if (cg != null) {
+                GroupDocument g = cg.toObject(GroupDocument.class);
+                if (g != null) {
+                    g.setId(cg.getId());
+                    return Optional.of(g);
+                }
+            }
+            return Optional.empty();
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Error consultando grupo", e);
+        }
+    }
+
+    public List<GroupDto> ensureDefaultGroups(String schoolId, String year) {
+        if (schoolId == null || schoolId.isBlank()) return List.of();
+        String resolvedYear = (year == null || year.isBlank()) ? String.valueOf(Year.now().getValue()) : year;
+        List<GroupDto> created = new ArrayList<>();
+
+        List<String> studentRecipients = studentService.collectRecipientEmails(schoolId, resolvedYear);
+        List<String> userRecipients = userService.collectEmailsBySchool(schoolId);
+
+        created.add(upsertSystemGroup(
+                systemId(SYSTEM_ALL_STUDENTS, resolvedYear),
+                "Todos los estudiantes",
+                "Incluye a todos los estudiantes/apoderados del año " + resolvedYear,
+                studentRecipients,
+                schoolId,
+                resolvedYear,
+                SYSTEM_ALL_STUDENTS
+        ));
+
+        Set<String> community = new HashSet<>(studentRecipients);
+        community.addAll(userRecipients);
+        created.add(upsertSystemGroup(
+                systemId(SYSTEM_ALL_COMMUNITY, resolvedYear),
+                "Todo el establecimiento",
+                "Todos los usuarios y estudiantes/apoderados del año " + resolvedYear,
+                new ArrayList<>(community),
+                schoolId,
+                resolvedYear,
+                SYSTEM_ALL_COMMUNITY
+        ));
+
+        return created.stream().filter(Objects::nonNull).toList();
+    }
+
+    private GroupDto upsertSystemGroup(String id, String name, String description, List<String> members, String schoolId, String year, String systemType) {
+        try {
+            DocumentReference ref = tenantGroups(schoolId).document(id);
+            var snap = ref.get().get();
+            GroupDocument g = snap.exists() ? snap.toObject(GroupDocument.class) : new GroupDocument();
+            if (g == null) g = new GroupDocument();
+            g.setId(id);
+            g.setName(name);
+            g.setDescription(description);
+            g.setSchoolId(schoolId);
+            g.setYear(year);
+            g.setMemberIds(members == null ? List.of() : members.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .map(String::toLowerCase)
+                    .distinct()
+                    .toList());
+            if (g.getCreatedAt() == null) {
+                g.setCreatedAt(Instant.now());
+            }
+            g.setSystem(true);
+            g.setSystemType(systemType);
+            ref.set(g).get();
+            return new GroupDto(g.getId(), g.getName(), g.getDescription(), g.getMemberIds(), g.getSchoolId(), g.getYear(), g.getCreatedAt(), g.getSystem(), g.getSystemType());
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Error asegurando grupos por defecto", e);
+        }
+    }
+
+    public String systemId(String type, String year) {
+        return ("sys-" + type + "-" + year).toLowerCase();
     }
 }

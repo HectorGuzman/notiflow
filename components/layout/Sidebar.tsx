@@ -110,8 +110,11 @@ export const Sidebar: React.FC = () => {
   );
 
   return (
-    <aside className="hidden sm:flex sm:flex-col w-64 bg-secondary text-white">
-      <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+    <aside className="hidden sm:flex sm:flex-col w-64 bg-gradient-to-b from-secondary to-secondary/95 text-white shadow-xl">
+      <div className="px-4 pt-6 pb-3">
+        <p className="text-xs uppercase tracking-[0.12em] text-white/60 mb-3">Navegación</p>
+      </div>
+      <nav className="flex-1 px-4 pb-6 space-y-2 overflow-y-auto">
         {menuItems
           .filter((item) => !item.hidden)
           .map((item) => {
@@ -129,13 +132,14 @@ export const Sidebar: React.FC = () => {
                     )
                   }
                   className={clsx(
-                    'w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg transition-colors',
-                    'hover:bg-primary/20'
+                    'w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl transition-all',
+                    'hover:bg-white/10 border border-transparent hover:border-white/15',
+                    'backdrop-blur-sm'
                   )}
                 >
                   <div className="flex items-center gap-3">
                     <Icon size={20} />
-                    <span className="font-medium">{item.label}</span>
+                    <span className="font-semibold">{item.label}</span>
                   </div>
                   <FiChevronDown
                     size={16}
@@ -152,10 +156,10 @@ export const Sidebar: React.FC = () => {
                         key={subitem.href}
                         href={subitem.href}
                         className={clsx(
-                          'block px-4 py-2 rounded-lg text-sm transition-colors',
+                          'block px-4 py-2 rounded-lg text-sm transition-colors backdrop-blur-sm',
                           pathname === subitem.href
-                            ? 'bg-primary/20 font-semibold text-secondary'
-                            : 'hover:bg-primary/15'
+                            ? 'bg-white text-secondary font-semibold shadow-sm'
+                            : 'hover:bg-white/10'
                         )}
                       >
                         {subitem.label}
@@ -172,14 +176,19 @@ export const Sidebar: React.FC = () => {
               key={item.href}
               href={item.href || '#'}
               className={clsx(
-                'flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors text-white',
+                'flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold transition-all text-white backdrop-blur-sm border border-transparent',
                 isActive
-                  ? 'bg-primary/25 text-white'
-                  : 'hover:bg-primary/20'
+                  ? 'bg-white text-secondary shadow-lg'
+                  : 'hover:bg-white/10 hover:border-white/20'
               )}
             >
               <Icon size={20} />
-              {item.label}
+              <span>{item.label}</span>
+              {item.badge && (
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-primary text-secondary font-bold uppercase tracking-wide">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}

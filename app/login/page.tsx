@@ -46,8 +46,9 @@ export default function LoginPage() {
         setResendIn(30);
       } else {
         const verifyRes = await apiClient.verifyOtp(email, code);
-        const { token, user } = verifyRes.data;
-        localStorage.setItem('authToken', token);
+        const { token, refreshToken, user } = verifyRes.data;
+        if (token) localStorage.setItem('authToken', token);
+        if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
         setUser(user);
         router.push('/dashboard');
       }

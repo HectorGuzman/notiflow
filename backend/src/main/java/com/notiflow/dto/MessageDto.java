@@ -18,6 +18,9 @@ public record MessageDto(
         MessageStatus appStatus,
         List<String> appReadBy,
         Map<String, MessageStatus> appStatuses,
+        Map<String, MessageStatus> emailStatuses,
+        Map<String, String> recipientNames,
+        List<RecipientDetail> recipientsDetails,
         String schoolId,
         String year,
         List<String> groupIds,
@@ -26,6 +29,7 @@ public record MessageDto(
         Instant createdAt,
         List<AttachmentMetadata> attachments,
         String reason,
-        Boolean canDelete
+        Boolean canDelete,
+        Boolean broadcast
 ) {
 }

@@ -7,8 +7,11 @@ import com.notiflow.dto.UserDto;
 import com.notiflow.model.UserDocument;
 import com.notiflow.model.UserRole;
 import com.notiflow.service.AccessControlService;
+import com.notiflow.service.SchoolService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.Set;
@@ -23,15 +26,22 @@ public class AuthService {
     private final AccessControlService accessControlService;
     private final UsageService usageService;
     private final StudentService studentService;
+    private final RefreshJwtService refreshJwtService;
+    private final RefreshTokenStore refreshTokenStore;
+    private final SchoolService schoolService;
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
-    public AuthService(JwtService jwtService, UserService userService, PasswordEncoder passwordEncoder, AccessControlService accessControlService, UsageService usageService, StudentService studentService) {
+    public AuthService(JwtService jwtService, RefreshJwtService refreshJwtService, RefreshTokenStore refreshTokenStore, UserService userService, PasswordEncoder passwordEncoder, AccessControlService accessControlService, UsageService usageService, StudentService studentService, SchoolService schoolService) {
         this.jwtService = jwtService;
+        this.refreshJwtService = refreshJwtService;
+        this.refreshTokenStore = refreshTokenStore;
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.superAdminEmail = System.getenv().getOrDefault("SUPER_ADMIN_EMAIL", "").toLowerCase();
         this.accessControlService = accessControlService;
         this.usageService = usageService;
         this.studentService = studentService;
+        this.schoolService = schoolService;
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -62,7 +72,7 @@ public class AuthService {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Correo requerido");
         }
-        String normalized = email.toLowerCase();
+        String normalized = email.trim().toLowerCase();
 
         if (!studentsOnly) {
             java.util.Optional<UserDocument> userOpt = userService.findByEmail(normalized);
@@ -80,7 +90,12 @@ public class AuthService {
         }
 
         // Permitir login OTP para apoderados/estudiantes (correo de apoderado).
-        var students = studentService.findAllByEmail(normalized);
+        java.util.List<com.notiflow.model.StudentDocument> students = java.util.Collections.emptyList();
+        try {
+            students = studentService.findAllByEmail(normalized);
+        } catch (Exception ex) {
+            log.warn("No se pudo consultar estudiantes para login OTP: {}", ex.getMessage());
+        }
         if (!students.isEmpty()) {
             var chosen = students;
             if (studentId != null && !studentId.isBlank()) {
@@ -91,6 +106,17 @@ public class AuthService {
             }
             var first = chosen.get(0);
             String schoolId = first.getSchoolId() == null ? "" : first.getSchoolId();
+            String schoolName = "Colegio";
+            try {
+                if (schoolService != null && schoolId != null && !schoolId.isBlank()) {
+                    var school = schoolService.getById(schoolId);
+                    if (school != null && school.getName() != null && !school.getName().isBlank()) {
+                        schoolName = school.getName();
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("No se pudo obtener nombre de colegio para {}: {}", schoolId, ex.getMessage());
+            }
             var options = students.stream()
                     .map(s -> new StudentOption(
                             s.getId(),
@@ -104,7 +130,7 @@ public class AuthService {
             doc.setEmail(normalized);
             doc.setRole(UserRole.STUDENT);
             doc.setSchoolId(schoolId);
-            doc.setSchoolName("Colegio");
+            doc.setSchoolName(schoolName);
             return buildAuthResponse(doc, options);
         }
 
@@ -115,15 +141,15 @@ public class AuthService {
         // Si el correo coincide con un apoderado específico, usar ese nombre
         if (s.getGuardians() != null && !s.getGuardians().isEmpty()) {
             var match = s.getGuardians().stream()
-                    .filter(g -> g.email() != null && g.email().equalsIgnoreCase(email))
+                    .filter(g -> g.getEmail() != null && g.getEmail().equalsIgnoreCase(email))
                     .findFirst();
             if (match.isPresent()) {
-                String name = match.get().name();
+                String name = match.get().getName();
                 if (name != null && !name.isBlank()) return name;
             }
             // si no hay match exacto, usar el primero con nombre
-            var first = s.getGuardians().stream().filter(g -> g.name() != null && !g.name().isBlank()).findFirst();
-            if (first.isPresent()) return first.get().name();
+            var first = s.getGuardians().stream().filter(g -> g.getName() != null && !g.getName().isBlank()).findFirst();
+            if (first.isPresent()) return first.get().getName();
         }
         // fallback a campos antiguos o nombre del estudiante
         String legacy = ((s.getGuardianFirstName() == null ? "" : s.getGuardianFirstName()) + " " +
@@ -162,6 +188,12 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(claims, user.email());
-        return new AuthResponse(token, user, linkedStudents == null ? java.util.List.of() : linkedStudents);
+        String refresh = refreshJwtService.generateToken(claims, user.email());
+        try {
+            String jti = (String) claims.get("jti");
+            java.time.Instant exp = java.time.Instant.now().plusSeconds(refreshJwtService.getExpirationSeconds());
+            refreshTokenStore.save(jti, user.email(), exp);
+        } catch (Exception ignored) {}
+        return new AuthResponse(token, refresh, user, linkedStudents == null ? java.util.List.of() : linkedStudents);
     }
 }

@@ -10,12 +10,17 @@ import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.notiflow.dto.AttachmentRequest;
+import com.notiflow.dto.GuardianContact;
 import com.notiflow.dto.MessageListResponse;
 import com.notiflow.dto.MessageDto;
 import com.notiflow.dto.MessageRequest;
+import com.notiflow.dto.RecipientDetail;
 import com.notiflow.model.AttachmentMetadata;
+import com.notiflow.model.GroupDocument;
+import com.notiflow.service.GroupService;
 import com.notiflow.model.MessageDocument;
 import com.notiflow.model.MessageStatus;
+import com.notiflow.model.StudentDocument;
 import com.notiflow.service.SchoolService;
 import com.notiflow.util.CurrentUser;
 import com.notiflow.model.UserDocument;
@@ -50,6 +55,10 @@ public class MessageService {
     private final String attachmentsBucket;
     private final DeviceTokenService deviceTokenService;
     private final TeacherPermissionService teacherPermissionService;
+    private final GroupService groupService;
+    private final StudentService studentService;
+    private final UserService userService;
+    private final String trackingBaseUrl;
     private final String fcmServerKey;
     private final String fcmCredentialsJson;
     private final String fcmProjectId;
@@ -62,6 +71,10 @@ public class MessageService {
             SchoolService schoolService,
             DeviceTokenService deviceTokenService,
             TeacherPermissionService teacherPermissionService,
+            GroupService groupService,
+            StudentService studentService,
+            UserService userService,
+            @org.springframework.beans.factory.annotation.Value("${app.tracking-base-url:https://api.notiflow.app}") String trackingBaseUrl,
             @org.springframework.beans.factory.annotation.Value("${ATTACHMENTS_BUCKET:}") String attachmentsBucket,
             @org.springframework.beans.factory.annotation.Value("${app.fcm.server-key:}") String fcmServerKey,
             @org.springframework.beans.factory.annotation.Value("${app.fcm.credentials-json:}") String fcmCredentialsJson,
@@ -73,6 +86,10 @@ public class MessageService {
         this.schoolService = schoolService;
         this.attachmentsBucket = attachmentsBucket;
         this.deviceTokenService = deviceTokenService;
+        this.groupService = groupService;
+        this.studentService = studentService;
+        this.userService = userService;
+        this.trackingBaseUrl = trackingBaseUrl != null && !trackingBaseUrl.isBlank() ? trackingBaseUrl : "https://api.notiflow.app";
         this.fcmServerKey = fcmServerKey;
         this.fcmCredentialsJson = fcmCredentialsJson;
         this.fcmProjectId = fcmProjectId;
@@ -80,7 +97,7 @@ public class MessageService {
         this.teacherPermissionService = teacherPermissionService;
     }
 
-    public MessageListResponse list(String schoolId, boolean isGlobal, String year, String senderEmailFilter, String query, int page, int pageSize) {
+    public MessageListResponse list(String schoolId, boolean isGlobal, String year, String senderEmailFilter, String recipientEmailFilter, String query, int page, int pageSize) {
         try {
             int safePage = Math.max(1, page);
             int safeSize = Math.min(Math.max(1, pageSize), 100);
@@ -94,6 +111,9 @@ public class MessageService {
             }
             if (senderEmailFilter != null && !senderEmailFilter.isBlank()) {
                 base = base.whereEqualTo("senderEmail", senderEmailFilter.toLowerCase());
+            }
+            if (recipientEmailFilter != null && !recipientEmailFilter.isBlank()) {
+                base = base.whereArrayContains("recipients", recipientEmailFilter.toLowerCase());
             }
             return fetch(base, query, safePage, safeSize);
         } catch (InterruptedException | ExecutionException e) {
@@ -230,6 +250,8 @@ public class MessageService {
                     : List.of("email");
             List<String> groupIds = request.groupIds() == null ? List.of() : request.groupIds().stream().filter(g -> g != null && !g.isBlank()).map(String::trim).toList();
             senderName = resolveSenderName(senderName, senderId);
+            String allStudentsGroupId = groupService.systemId(GroupService.SYSTEM_ALL_STUDENTS, resolvedYear);
+            String allCommunityGroupId = groupService.systemId(GroupService.SYSTEM_ALL_COMMUNITY, resolvedYear);
 
             // Restricción por profesor: solo grupos permitidos
             if (current != null && "teacher".equalsIgnoreCase(current.role())) {
@@ -254,22 +276,87 @@ public class MessageService {
             msg.setSenderId(senderId);
             msg.setSenderName(senderName);
             msg.setSenderEmail(senderId);
-            msg.setRecipients(request.recipients());
+            List<String> normalizedRecipients = request.recipients() == null
+                    ? List.of()
+                    : request.recipients().stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .map(String::toLowerCase)
+                    .distinct()
+                    .toList();
+
+            // Si se usan grupos del sistema, enriquecemos destinatarios y marcamos broadcast
+            boolean broadcast = false;
+            if (groupIds != null && !groupIds.isEmpty()) {
+                List<String> expanded = new ArrayList<>(normalizedRecipients);
+                for (String gid : groupIds) {
+                    if (gid == null || gid.isBlank()) continue;
+                    try {
+                        var gOpt = groupService.findById(gid, schoolId);
+                        if (gOpt.isPresent()) {
+                            GroupDocument g = gOpt.get();
+                            if (g.getMemberIds() != null) {
+                                expanded.addAll(g.getMemberIds());
+                            }
+                            if (Boolean.TRUE.equals(g.getSystem()) &&
+                                    (GroupService.SYSTEM_ALL_STUDENTS.equalsIgnoreCase(g.getSystemType())
+                                            || GroupService.SYSTEM_ALL_COMMUNITY.equalsIgnoreCase(g.getSystemType()))) {
+                                broadcast = true;
+                            }
+                        }
+                    } catch (Exception ignore) {
+                        // si no se puede leer el grupo seguimos con los destinatarios actuales
+                    }
+                }
+                normalizedRecipients = expanded.stream()
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(s -> !s.isBlank())
+                        .map(String::toLowerCase)
+                        .distinct()
+                        .toList();
+            }
+            msg.setRecipients(normalizedRecipients);
             msg.setChannels(channels);
             msg.setSchoolId(schoolId);
             msg.setReason(request.reason());
             msg.setYear(resolvedYear);
             msg.setGroupIds(groupIds);
+            if (!broadcast && (groupIds.contains(allStudentsGroupId) || groupIds.contains(allCommunityGroupId))) {
+                broadcast = true;
+            }
+            Map<String, String> recipientNames = resolveRecipientNames(normalizedRecipients);
+            msg.setRecipientNames(recipientNames);
+            msg.setRecipientsDetails(buildRecipientDetails(normalizedRecipients, recipientNames));
             msg.setAppReadBy(new ArrayList<>());
-            if (channels.contains("app") && request.recipients() != null) {
-                Map<String, MessageStatus> perRecipient = new HashMap<>();
-                for (String r : request.recipients()) {
-                    if (r != null) {
-                        perRecipient.put(r, MessageStatus.PENDING);
+            Map<String, MessageStatus> perRecipientEmail = new HashMap<>();
+            if (channels.contains("app") && !normalizedRecipients.isEmpty()) {
+                List<String> studentOnly = studentRecipientEmails(normalizedRecipients);
+                if (!studentOnly.isEmpty()) {
+                    Map<String, MessageStatus> perRecipient = new HashMap<>();
+                    for (String r : studentOnly) {
+                        if (r != null) {
+                            String key = r.trim().toLowerCase();
+                            if (!key.isBlank()) {
+                                perRecipient.put(key, MessageStatus.PENDING);
+                            }
+                        }
+                    }
+                    msg.setAppStatuses(perRecipient);
+                } else {
+                    channels = channels.stream().filter(c -> !"app".equalsIgnoreCase(c)).toList();
+                    msg.setChannels(channels);
+                }
+            }
+            if (channels.contains("email") && !normalizedRecipients.isEmpty()) {
+                for (String key : normalizedRecipients) {
+                    if (key != null && !key.isBlank()) {
+                        perRecipientEmail.put(key, MessageStatus.PENDING);
                     }
                 }
-                msg.setAppStatuses(perRecipient);
             }
+            msg.setEmailStatuses(perRecipientEmail.isEmpty() ? null : perRecipientEmail);
             List<AttachmentRequest> attachments = request.attachments() == null
                     ? List.of()
                     : request.attachments().stream().filter(Objects::nonNull).toList();
@@ -281,6 +368,7 @@ public class MessageService {
             Instant now = Instant.now();
             Instant scheduledAt = parseScheduledAt(request.scheduleAt());
             boolean isScheduled = scheduledAt != null && scheduledAt.isAfter(now.plusSeconds(30));
+            msg.setBroadcast(broadcast || normalizedRecipients.size() > 50);
 
             String schoolLogo = null;
             String schoolName = null;
@@ -438,8 +526,8 @@ public class MessageService {
         boolean mailOk = true;
         MessageStatus emailStatus = null;
         MessageStatus appStatus = null;
+        Map<String, MessageStatus> perRecipientEmail = msg.getEmailStatuses() != null ? new HashMap<>(msg.getEmailStatuses()) : new HashMap<>();
 
-        String htmlBody = buildHtmlBody(msg.getContent(), msg.getSenderName(), msg.getSenderEmail(), msg.getReason(), attachments, schoolLogo, schoolName);
         String textBody = msg.getContent();
         String subject = (schoolName != null && !schoolName.isBlank()
                 ? schoolName
@@ -455,30 +543,70 @@ public class MessageService {
                         .warn("No se encontraron correos válidos en recipients");
             }
             for (String to : emails) {
+                // usa el correo como "nombre" del destinatario para el chip Para
+                String htmlBody = buildHtmlBody(
+                        msg.getContent(),
+                        msg.getSenderName(),
+                        msg.getSenderEmail(),
+                        msg.getReason(),
+                        attachments,
+                        schoolLogo,
+                        schoolName,
+                        to
+                );
+                String htmlWithTracking = appendTrackingPixel(htmlBody, msg.getId(), to);
                 boolean sent = emailService.sendMessageEmail(
                         to,
                         subject,
-                        htmlBody,
+                        htmlWithTracking,
                         textBody,
                         attachments
                 );
+                String key = to == null ? "" : to.trim().toLowerCase();
+                if (!key.isBlank()) {
+                    perRecipientEmail.put(key, sent ? MessageStatus.SENT : MessageStatus.FAILED);
+                }
                 mailOk = mailOk && sent;
             }
+            msg.setEmailStatuses(perRecipientEmail);
         } else {
             if (channels.contains("email")) {
                 mailOk = false;
                 org.slf4j.LoggerFactory.getLogger(MessageService.class)
                         .warn("EmailService no está habilitado; no se enviarán correos");
+                if (msg.getRecipients() != null) {
+                    for (String r : msg.getRecipients()) {
+                        if (r != null) {
+                            String key = r.trim().toLowerCase();
+                            if (!key.isBlank()) {
+                                perRecipientEmail.put(key, MessageStatus.FAILED);
+                            }
+                        }
+                    }
+                    msg.setEmailStatuses(perRecipientEmail);
+                }
             }
         }
         if (channels.contains("email")) {
             emailStatus = mailOk ? MessageStatus.SENT : MessageStatus.FAILED;
         }
         if (channels.contains("app")) {
-            appStatus = MessageStatus.PENDING;
-            List<String> tokens = deviceTokenService.tokensForRecipients(msg.getRecipients(), schoolId);
+            List<String> studentRecipients = studentRecipientEmails(msg.getRecipients());
+            if (!studentRecipients.isEmpty()) {
+                appStatus = MessageStatus.PENDING;
+            }
+            List<String> tokens = studentRecipients.isEmpty()
+                    ? List.of()
+                    : deviceTokenService.tokensForRecipients(studentRecipients, schoolId);
             if (!tokens.isEmpty()) {
                 sendPushNotifications(tokens, subject, msg.getReason(), msg.getId(), schoolId);
+                if (msg.getAppStatuses() != null && !msg.getAppStatuses().isEmpty()) {
+                    Map<String, MessageStatus> updated = new HashMap<>(msg.getAppStatuses());
+                    for (String key : updated.keySet()) {
+                        updated.put(key, MessageStatus.SENT);
+                    }
+                    msg.setAppStatuses(updated);
+                }
             }
         }
         MessageStatus status = mailOk ? MessageStatus.SENT : MessageStatus.FAILED;
@@ -525,8 +653,126 @@ public class MessageService {
         return false;
     }
 
+    private Map<String, String> resolveRecipientNames(List<String> recipients) {
+        Map<String, String> result = new HashMap<>();
+        if (recipients == null || recipients.isEmpty()) return result;
+        for (String raw : recipients) {
+            if (raw == null) continue;
+            String email = raw.trim().toLowerCase();
+            if (email.isBlank() || result.containsKey(email)) continue;
+            String name = null;
+            try {
+                var userOpt = userService.findByEmail(email);
+                if (userOpt.isPresent()) {
+                    name = userOpt.get().getName();
+                }
+            } catch (Exception e) {
+                org.slf4j.LoggerFactory.getLogger(MessageService.class)
+                        .warn("No se pudo resolver nombre de usuario para {}: {}", email, e.getMessage());
+            }
+
+            if (name == null || name.isBlank()) {
+                try {
+                    List<StudentDocument> students = studentService.findAllByEmail(email);
+                    for (StudentDocument s : students) {
+                        if (s == null) continue;
+                        String studentName = String.join(" ", java.util.Arrays.asList(
+                                safe(s.getFirstName()),
+                                safe(s.getLastNameFather()),
+                                safe(s.getLastNameMother())
+                        )).trim();
+                        if (s.getEmail() != null && s.getEmail().equalsIgnoreCase(email)) {
+                            name = studentName.isBlank() ? null : studentName;
+                            break;
+                        }
+                        if (s.getGuardians() != null) {
+                            for (GuardianContact g : s.getGuardians()) {
+                                if (g == null) continue;
+                                String ge = g.getEmail() == null ? "" : g.getEmail().trim().toLowerCase();
+                                if (!ge.isBlank() && ge.equals(email)) {
+                                    if (g.getName() != null && !g.getName().isBlank()) {
+                                        name = g.getName();
+                                    } else if (!studentName.isBlank()) {
+                                        name = "Apoderado de " + studentName;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        if (name != null && !name.isBlank()) break;
+                    }
+                } catch (Exception e) {
+                    org.slf4j.LoggerFactory.getLogger(MessageService.class)
+                            .warn("No se pudo resolver nombre de estudiante/apoderado para {}: {}", email, e.getMessage());
+                }
+            }
+
+            if (name != null && !name.isBlank()) {
+                result.put(email, name);
+            }
+        }
+        return result;
+    }
+
+    private List<RecipientDetail> buildRecipientDetails(List<String> recipients, Map<String, String> names) {
+        if (recipients == null || recipients.isEmpty()) return List.of();
+        List<RecipientDetail> details = new ArrayList<>();
+        for (String raw : recipients) {
+            if (raw == null || raw.isBlank()) continue;
+            String normalized = raw.trim().toLowerCase();
+            String name = names.getOrDefault(normalized, names.get(raw));
+            details.add(new RecipientDetail(normalized, name));
+        }
+        return details;
+    }
+
+    /**
+     * Filtra los correos que corresponden a estudiantes o apoderados (guardians) para uso de App.
+     */
+    private List<String> studentRecipientEmails(List<String> recipients) {
+        if (recipients == null || recipients.isEmpty()) return List.of();
+        List<String> result = new ArrayList<>();
+        for (String r : recipients) {
+            if (r == null || r.isBlank()) continue;
+            try {
+                List<StudentDocument> matches = studentService.findAllByEmail(r.toLowerCase());
+                if (matches != null && !matches.isEmpty()) {
+                    result.add(r.trim().toLowerCase());
+                }
+            } catch (Exception ignore) {
+                // si falla la consulta, no agregamos el correo
+            }
+        }
+        return result;
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
+    }
+
     private MessageDto toDto(MessageDocument msg, CurrentUser user) {
         boolean deletable = canDelete(user, msg);
+        Map<String, String> recipientNames = msg.getRecipientNames();
+        List<RecipientDetail> recipientDetails = msg.getRecipientsDetails();
+        Map<String, MessageStatus> emailStatuses = msg.getEmailStatuses();
+        if ((recipientNames == null || recipientNames.isEmpty()) && msg.getRecipients() != null) {
+            recipientNames = resolveRecipientNames(msg.getRecipients());
+        }
+        if ((recipientDetails == null || recipientDetails.isEmpty()) && msg.getRecipients() != null) {
+            recipientDetails = buildRecipientDetails(msg.getRecipients(), recipientNames != null ? recipientNames : Map.of());
+        }
+        if ((emailStatuses == null || emailStatuses.isEmpty()) && msg.getRecipients() != null && msg.getEmailStatuses() == null) {
+            Map<String, MessageStatus> fallback = new HashMap<>();
+            for (String r : msg.getRecipients()) {
+                if (r != null) {
+                    String key = r.trim().toLowerCase();
+                    if (!key.isBlank()) {
+                        fallback.put(key, msg.getEmailStatus() != null ? msg.getEmailStatus() : MessageStatus.PENDING);
+                    }
+                }
+            }
+            emailStatuses = fallback;
+        }
         return new MessageDto(
                 msg.getId(),
                 msg.getContent(),
@@ -538,6 +784,9 @@ public class MessageService {
                 msg.getAppStatus(),
                 msg.getAppReadBy(),
                 msg.getAppStatuses(),
+                emailStatuses,
+                recipientNames,
+                recipientDetails,
                 msg.getSchoolId(),
                 msg.getYear(),
                 msg.getGroupIds(),
@@ -546,7 +795,8 @@ public class MessageService {
                 msg.getCreatedAt(),
                 msg.getAttachments(),
                 msg.getReason(),
-                deletable
+                deletable,
+                msg.getBroadcast()
         );
     }
     
@@ -783,7 +1033,7 @@ public class MessageService {
             msg.setAppReadBy(readBy);
 
             Map<String, MessageStatus> perRecipient = msg.getAppStatuses() != null ? new HashMap<>(msg.getAppStatuses()) : new HashMap<>();
-            perRecipient.put(readerEmail, MessageStatus.READ);
+            perRecipient.put(readerEmail.toLowerCase(), MessageStatus.READ);
             msg.setAppStatuses(perRecipient);
 
             // Si todos los destinatarios que tienen canal app ya leyeron, marcar appStatus como READ
@@ -804,7 +1054,44 @@ public class MessageService {
         }
     }
 
-    private String buildHtmlBody(String content, String senderName, String senderEmail, String reason, List<AttachmentRequest> attachments, String logoUrl, String schoolName) {
+    public void markEmailOpened(String messageId, String recipientEmail) {
+        try {
+            if (recipientEmail == null || recipientEmail.isBlank()) {
+                return;
+            }
+            String normalizedRecipient = recipientEmail.trim().toLowerCase();
+            DocumentReference ref = findMessageRef(messageId, null);
+            if (ref == null) {
+                return;
+            }
+            var snapshot = ref.get().get();
+            MessageDocument msg = snapshot.toObject(MessageDocument.class);
+            if (msg == null) {
+                return;
+            }
+            Map<String, MessageStatus> perRecipient = msg.getEmailStatuses() != null
+                    ? new HashMap<>(msg.getEmailStatuses())
+                    : new HashMap<>();
+            perRecipient.put(normalizedRecipient, MessageStatus.READ);
+            msg.setEmailStatuses(perRecipient);
+
+            boolean allRead = false;
+            if (msg.getRecipients() != null && !msg.getRecipients().isEmpty()) {
+                long recipientCount = msg.getRecipients().size();
+                long readCount = perRecipient.values().stream().filter(v -> v == MessageStatus.READ).count();
+                allRead = readCount >= recipientCount;
+            }
+            if (msg.getChannels() != null && msg.getChannels().contains("email")) {
+                msg.setEmailStatus(allRead ? MessageStatus.READ : msg.getEmailStatus());
+            }
+            ref.set(msg).get();
+        } catch (InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("No se pudo marcar email como leído", e);
+        }
+    }
+
+    private String buildHtmlBody(String content, String senderName, String senderEmail, String reason, List<AttachmentRequest> attachments, String logoUrl, String schoolName, String recipientName) {
         List<AttachmentRequest> attList = attachments == null ? java.util.Collections.emptyList() : attachments;
         String htmlContent = renderContentHtml(content);
         final String notiflowBadge = "https://www.notiflow.cl/Naranjo_Degradado.png";
@@ -818,37 +1105,126 @@ public class MessageService {
             htmlContent = htmlContent + "<p style=\"margin-top:12px;\"><img src=\"cid:" + inlineImg.cid() + "\" alt=\"imagen adjunta\" style=\"max-width:100%;\"/></p>";
         }
 
-        String logoBlock = (logoUrl != null && !logoUrl.isBlank())
-                ? "<img src=\"" + logoUrl + "\" alt=\"Logo\" style=\"max-height:120px; display:block;\" />"
-                : "<span style=\"font-weight:700;font-size:18px;\">Notiflow</span>";
+        String schoolLogoBlock = (logoUrl != null && !logoUrl.isBlank())
+                ? "<img src=\"" + logoUrl + "\" alt=\"Logo colegio\" style=\"max-height:64px; width:auto; display:block;\" />"
+                : "<img src=\"" + notiflowBadge + "\" alt=\"Notiflow\" style=\"height:48px; width:auto; display:block;\" />";
         String headerText = (reason != null && !reason.isBlank()) ? reason : "Mensaje";
         String senderLine = (senderName != null ? senderName : "Usuario") +
                 (senderEmail != null && !senderEmail.isBlank() ? " (" + senderEmail + ")" : "");
         String schoolLine = (schoolName != null && !schoolName.isBlank()) ? schoolName : "Notiflow";
+        String recipientEmail = (recipientName != null && !recipientName.isBlank()) ? recipientName : "";
+        String recipientLabel = formatRecipient(recipientEmail);
+        String recipientLine = recipientLabel.isBlank() ? (recipientEmail.isBlank() ? "Destinatario" : recipientEmail) : recipientLabel + " · " + recipientEmail;
 
-        return """
-                <div style="font-family: 'Helvetica Neue', Arial, sans-serif; background:#e0f2fe; padding:24px;">
-                  <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
-                    <div style="background:#fde68a;color:#854d0e;padding:16px 20px;font-size:16px;font-weight:700;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                      <div style="flex:0 0 auto;">%s</div>
-                      <div style="flex:1;min-width:200px;">
-                        <div style="font-size:15px;color:#92400e;font-weight:700;">%s</div>
-                        <div style="font-size:14px;color:#7a3a00;font-weight:800;letter-spacing:0.02em;">Asunto: %s</div>
-                        <div style="font-size:12px;color:#b45309;">Enviado por: %s</div>
-                      </div>
-                    </div>
-                    <div style="padding:20px;font-size:15px;color:#111827;line-height:1.6;">
-                      %s
-                    </div>
-                    <div style="padding:16px 20px;border-top:1px solid #e5e7eb;font-size:13px;color:#6b7280;">
-                      <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
-                        <img src="%s" alt="Notiflow" style="height:16px;width:auto;display:block;" />
-                        <span>Enviado a través de Notiflow</span>
-                      </div>
-                    </div>
-                  </div>
+        String template = """
+                <div style="margin:0; padding:0; background:#f5f7fb; width:100%; font-family:'Inter','Helvetica Neue',Arial,sans-serif;">
+                  <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="width:100%; max-width:720px; margin:0 auto; padding:18px 14px;">
+                    <tr>
+                      <td>
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%; background:#ffffff; border-radius:18px; overflow:hidden; border:1px solid #e5e7eb; box-shadow:0 16px 48px rgba(15,23,42,0.14);">
+                          <tr>
+                            <td style="padding:0; background:linear-gradient(135deg,#ff9f5a 0%,#ffc778 55%,#ffe9c7 100%);">
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:18px 20px;">
+                                <tr>
+                                  <td style="vertical-align:middle; width:68%; padding-right:8px;">
+                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;">
+                                      <tr>
+                                        <td style="width:1%; padding-right:12px;">
+                                          <div style="background:rgba(255,255,255,0.98); border-radius:14px; padding:12px 14px; display:inline-block; box-shadow:0 10px 22px rgba(0,0,0,0.12);">
+                                            {SCHOOL_LOGO}
+                                          </div>
+                                        </td>
+                                        <td style="vertical-align:middle;">
+                                          <div style="font-size:17px; font-weight:800; color:#0f172a; letter-spacing:0.01em; line-height:1.2;">{SCHOOL}</div>
+                                          <div style="font-size:12px; font-weight:700; color:#1f2937; opacity:0.95; line-height:1.4;">Asunto: {SUBJECT}</div>
+                                        </td>
+                                      </tr>
+                                    </table>
+                                  </td>
+                                  <td style="vertical-align:middle; text-align:right; width:32%; padding-left:8px;">
+                                    <div style="font-size:12px; color:#0f172a; font-weight:700; opacity:0.95;">Enviado por</div>
+                                    <div style="font-size:13px; color:#0f172a; font-weight:800; line-height:1.4;">{SENDER}</div>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+
+                          <tr>
+                            <td style="padding:22px 22px 6px 22px; background:#f7f8fb;">
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff; border:1px solid #e5e7eb; border-radius:14px; padding:18px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);">
+                                <tr>
+                                  <td style="padding-bottom:10px;">
+                                    <span style="font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#6b7280; margin-right:6px;">Para</span>
+                                    <span style="font-size:12px; font-weight:700; color:#0f172a; background:#dbeafe; border-radius:999px; padding:6px 12px; border:1px solid #cbd5e1; display:inline-block;">{RECIPIENT}</span>
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td style="font-size:15px; color:#0f172a; line-height:1.6; word-break:break-word;">{CONTENT}</td>
+                                </tr>
+                              </table>
+
+                              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:16px; border-collapse:separate; border-spacing:0 10px;">
+                                <tr>
+                                  <td style="padding:0;">
+                                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+                                      <tr>
+                                        <td style="background:#ffffff; color:#0f172a; padding:12px 14px; vertical-align:middle;">
+                                          <div style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; margin-bottom:6px;">Aviso</div>
+                                          <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;">
+                                            <tr>
+                                              <td style="width:1%; padding-right:10px; vertical-align:top;">
+                                                <div style="border:1px solid #e2e8f0; background:#fff; border-radius:12px; padding:6px; display:inline-block;">
+                                                  <img src="{FOOTER_BADGE}" alt="Notiflow" style="height:32px; width:auto; display:block;" />
+                                                </div>
+                                              </td>
+                                              <td style="vertical-align:middle; font-size:12px; color:#0f172a; line-height:1.5;">
+                                                No responda este correo; el buzón no se monitorea. Ante dudas, contacte a su colegio por los canales oficiales.
+                                              </td>
+                                            </tr>
+                                          </table>
+                                        </td>
+                                      </tr>
+                                    </table>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
                 </div>
-                """.formatted(logoBlock, schoolLine, headerText, senderLine, htmlContent, notiflowBadge);
+                """;
+
+        return template
+                .replace("{LOGO_BADGE}", nullSafe(notiflowBadge))
+                .replace("{SCHOOL_LOGO}", schoolLogoBlock)
+                .replace("{SCHOOL}", nullSafe(schoolLine))
+                .replace("{SUBJECT}", nullSafe(headerText))
+                .replace("{SENDER}", nullSafe(senderLine))
+                .replace("{RECIPIENT}", nullSafe(recipientLine))
+                .replace("{CONTENT}", nullSafe(htmlContent))
+                .replace("{FOOTER_BADGE}", nullSafe(notiflowBadge));
+    }
+
+    private String nullSafe(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String appendTrackingPixel(String html, String messageId, String recipient) {
+        String base = html == null ? "" : html;
+        String url = buildTrackingUrl(messageId, recipient);
+        if (url == null || url.isBlank()) return base;
+        return base + "<img src=\"" + url + "\" alt=\"\" style=\"width:1px;height:1px;display:block;opacity:0;\" />";
+    }
+
+    private String buildTrackingUrl(String messageId, String recipient) {
+        if (messageId == null || recipient == null || recipient.isBlank()) return null;
+        String normalizedBase = trackingBaseUrl.endsWith("/") ? trackingBaseUrl.substring(0, trackingBaseUrl.length() - 1) : trackingBaseUrl;
+        String safeRecipient = java.net.URLEncoder.encode(recipient, java.nio.charset.StandardCharsets.UTF_8);
+        return normalizedBase + "/messages/" + messageId + "/track?recipient=" + safeRecipient;
     }
 
     private String renderContentHtml(String content) {
@@ -861,6 +1237,20 @@ public class MessageService {
         // Bold with **text**
         String withBold = escaped.replaceAll("\\*\\*(.+?)\\*\\*", "<strong>$1</strong>");
         return linkify(withBold);
+    }
+
+    private String formatRecipient(String recipient) {
+        if (recipient == null || recipient.isBlank()) return "";
+        if (!recipient.contains("@")) return recipient;
+        String local = recipient.split("@")[0];
+        local = local.replace(".", " ").replace("_", " ").replace("-", " ");
+        String[] parts = local.split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (p.isBlank()) continue;
+            sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1).toLowerCase()).append(" ");
+        }
+        return sb.toString().trim();
     }
 
     private String linkify(String html) {

@@ -21,6 +21,7 @@ export default function TeacherPermissionsPage() {
   const [error, setError] = useState('');
   const [savingEmail, setSavingEmail] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState('');
 
   useEffect(() => {
     if (!canManage) return;
@@ -82,9 +83,14 @@ export default function TeacherPermissionsPage() {
   const savePerms = async (email: string) => {
     setSavingEmail(email);
     setError('');
+    setSaveSuccess('');
     try {
       const allowedGroupIds = perms[email.toLowerCase()] || [];
       await apiClient.updateTeacherPermission?.(email, { email, allowedGroupIds });
+      const teacherName =
+        teachers.find((t) => t.email.toLowerCase() === email.toLowerCase())?.name || email;
+      setSaveSuccess(`Se guardaron los accesos del profesor ${teacherName}.`);
+      setTimeout(() => setSaveSuccess(''), 3000);
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -121,6 +127,12 @@ export default function TeacherPermissionsPage() {
             ← Volver al dashboard
           </Link>
         </div>
+
+        {saveSuccess && (
+          <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded text-sm">
+            {saveSuccess}
+          </div>
+        )}
 
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">

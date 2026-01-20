@@ -6,6 +6,7 @@ import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Modal } from '@/components/ui';
 import { apiClient } from '@/lib/api-client';
 import { useAuthStore, useYearStore } from '@/store';
+import { notiflowLogoBase64, badgeLogoBase64 } from '@/lib/logo-base64';
 
 type MessageItem = {
   id: string;
@@ -13,8 +14,11 @@ type MessageItem = {
   senderName: string;
   senderEmail?: string;
   recipients: string[];
+  recipientNames?: Record<string, string | null | undefined>;
+  recipientsDetails?: { email?: string; name?: string | null }[];
   channels?: string[];
   emailStatus?: string;
+  emailStatuses?: Record<string, string>;
   appStatus?: string;
   appReadBy?: string[];
   appStatuses?: Record<string, string>;
@@ -119,6 +123,20 @@ const statusIcon = (status?: string) => {
   return '';
 };
 
+  const aggregateChannelStatus = (values: (string | undefined | null)[], fallback?: string) => {
+    const normalized = values
+      .filter(Boolean)
+      .map((v) => (v ?? '').toString().toLowerCase());
+    if (!normalized.length) return (fallback || 'pending').toLowerCase();
+  if (normalized.some((v) => v === 'failed')) return 'failed';
+  if (normalized.every((v) => v === 'read')) return 'read';
+  if (normalized.some((v) => v === 'read')) return 'read';
+  if (normalized.some((v) => v === 'sent' || v === 'delivered')) return 'sent';
+  if (normalized.some((v) => v === 'scheduled')) return 'scheduled';
+  if (normalized.some((v) => v === 'pending')) return 'pending';
+  return normalized[0];
+};
+
 export default function MessagesPage() {
   const { year } = useYearStore();
   const hasPermission = useAuthStore((state) => state.hasPermission);
@@ -149,8 +167,12 @@ export default function MessagesPage() {
   const printRecipient = (
     recipient: string,
     emailState: string,
+    emailReceived: boolean,
+    emailRead: boolean,
     appState: string,
-    appRead: boolean
+    appReceived: boolean,
+    appRead: boolean,
+    recipientName?: string
   ) => {
     if (!selectedMessage) return;
     const title = selectedMessage.reason || 'Detalle de mensaje';
@@ -161,16 +183,31 @@ export default function MessagesPage() {
         ? selectedMessage.content
         : JSON.stringify(selectedMessage.content);
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const notiflowLogo = `${origin}/NotiflowH_01.png`;
+    const notiflowLogo = notiflowLogoBase64;
     const schoolLogo =
       selectedMessage.schoolLogo ||
       selectedMessage.schoolLogoUrl ||
-      `${origin}/Naranjo_Degradado.png`;
+      badgeLogoBase64;
     const schoolName =
       selectedMessage.schoolName ||
       selectedMessage.school ||
       currentUser?.schoolName ||
       'Colegio';
+    const attachmentList =
+      (selectedMessage.attachments || []).length > 0
+        ? (selectedMessage.attachments || [])
+            .map(
+              (a) =>
+                `<li>${a.fileName || 'Archivo'}${a.mimeType ? ` <span style="color:#94a3b8;">(${a.mimeType})</span>` : ''}</li>`
+            )
+            .join('')
+        : '<li>No hay adjuntos</li>';
+    const inlineImages =
+      (selectedMessage.attachments || [])
+        .filter((a) => a.inline && a.downloadUrl && (a.mimeType || '').startsWith('image/'))
+        .map((a) => `<div style="margin-top:10px;"><img src="${a.downloadUrl}" alt="${a.fileName || 'imagen'}" style="max-width:100%; border-radius:10px;"/></div>`)
+        .join('') || '';
+
     const html = `
       <html>
         <head>
@@ -208,14 +245,25 @@ export default function MessagesPage() {
             <div class="meta"><strong>Fecha:</strong> ${created || '—'}</div>
             <div class="meta"><strong>Colegio:</strong> ${schoolName}</div>
             <div style="margin-top:10px; white-space:pre-wrap; line-height:1.5;">${content}</div>
+            <div style="margin-top:10px;">
+              <div class="section-title">Adjuntos</div>
+              <ul style="margin:0; padding-left:18px; color:#0f172a; font-size:12px; line-height:1.5;">
+                ${attachmentList}
+              </ul>
+            </div>
+            ${inlineImages}
           </div>
           <div class="card">
             <div class="section-title">Destinatario</div>
+            <div class="meta"><strong>Nombre:</strong> ${recipientName || '—'}</div>
             <div class="meta"><strong>Email:</strong> ${recipient}</div>
             <div class="meta"><strong>Canales:</strong> ${Array.isArray(selectedMessage.channels) ? selectedMessage.channels.join(', ') : '—'}</div>
             <table>
               <tr><th>Correo enviado</th><td>${emailState}</td></tr>
+              <tr><th>Correo recibido</th><td>${emailReceived ? 'Sí' : 'No'}</td></tr>
+              <tr><th>Correo leído</th><td>${emailRead ? 'Sí' : 'No'}</td></tr>
               <tr><th>App enviada</th><td>${appState}</td></tr>
+              <tr><th>App recibida</th><td>${appReceived ? 'Sí' : 'No'}</td></tr>
               <tr><th>App leída</th><td>${appRead ? 'Sí' : 'No'}</td></tr>
             </table>
           </div>
@@ -244,6 +292,112 @@ export default function MessagesPage() {
       iframe.contentWindow?.print();
       setTimeout(() => document.body.removeChild(iframe), 500);
     };
+  };
+
+  const recipientDisplayName = (email: string) => {
+    const normalized = (email || '').toLowerCase();
+    const detailName =
+      selectedMessage?.recipientsDetails?.find((d) => (d.email || '').toLowerCase() === normalized)?.name ||
+      selectedMessage?.recipientNames?.[normalized] ||
+      selectedMessage?.recipientNames?.[email];
+    if (detailName && detailName.trim()) return detailName;
+    const local = email?.split('@')[0] || '';
+    return formatLocalPart(local);
+  };
+
+  const resolveEmailStatus = (recipient: string) => {
+    const normalized = (recipient || '').toLowerCase();
+    const per = selectedMessage?.emailStatuses || {};
+    return per[normalized] || per[recipient] || selectedMessage?.emailStatus || selectedMessage?.status || 'pending';
+  };
+
+  const resolveAppStatus = (recipient: string) => {
+    const normalized = (recipient || '').toLowerCase();
+    const per = selectedMessage?.appStatuses || {};
+    if (per[normalized]) return per[normalized];
+    if (per[recipient]) return per[recipient];
+    if (Array.isArray(selectedMessage?.appReadBy) && selectedMessage?.appReadBy?.includes(recipient)) {
+      return 'read';
+    }
+    return selectedMessage?.appStatus || 'pending';
+  };
+
+  const isAppRecipient = (recipient: string) => {
+    const normalized = (recipient || '').toLowerCase();
+    const per = selectedMessage?.appStatuses || {};
+    const readBy = selectedMessage?.appReadBy || [];
+    return Boolean(per[normalized] || per[recipient] || readBy.includes(recipient) || readBy.includes(normalized));
+  };
+
+  const aggregateEmailChannelStatus = (message: MessageItem) => {
+    if (message.emailStatuses && Object.keys(message.emailStatuses).length > 0) {
+      return aggregateChannelStatus(Object.values(message.emailStatuses), message.emailStatus || message.status);
+    }
+    return (message.emailStatus || message.status || 'pending').toLowerCase();
+  };
+
+  const aggregateAppChannelStatus = (message: MessageItem) => {
+    if (message.appStatuses && Object.keys(message.appStatuses).length > 0) {
+      const vals = Object.values(message.appStatuses);
+      // si tenemos appReadBy marcamos como read
+      if (Array.isArray(message.appReadBy) && message.appReadBy.length) {
+        vals.push('read');
+      }
+      return aggregateChannelStatus(vals, message.appStatus || 'pending');
+    }
+    if (Array.isArray(message.appReadBy) && message.appReadBy.length) {
+      return 'read';
+    }
+    return (message.appStatus || 'pending').toLowerCase();
+  };
+
+  const emailProgress = (message: MessageItem) => {
+    const total = message.recipients?.length || 0;
+    if (!total) return { total: 0, read: 0, sent: 0, pct: 0 };
+    let read = 0;
+    let sent = 0;
+    const per = message.emailStatuses || {};
+    (message.recipients || []).forEach((r) => {
+      if (!r) return;
+      const key = r.toLowerCase();
+      const status = (per[key] || per[r] || message.emailStatus || message.status || '').toString().toLowerCase();
+      if (status === 'read') {
+        read += 1;
+        sent += 1;
+      } else if (status === 'sent' || status === 'delivered') {
+        sent += 1;
+      }
+    });
+    const pct = Math.round((read / total) * 100);
+    return { total, read, sent, pct };
+  };
+
+  const appProgress = (message: MessageItem) => {
+    const per = message.appStatuses || {};
+    const readList = message.appReadBy || [];
+    // Solo contar destinatarios que realmente van por app (apoderados/estudiantes con appStatuses/read)
+    const appRecipients = (message.recipients || []).filter((r) => {
+      if (!r) return false;
+      const key = r.toLowerCase();
+      return per[key] || per[r] || readList.includes(r) || readList.includes(key);
+    });
+    const total = appRecipients.length;
+    if (!total) return { total: 0, read: 0, sent: 0, pct: 0 };
+    let read = 0;
+    let sent = 0;
+    appRecipients.forEach((r) => {
+      if (!r) return;
+      const key = r.toLowerCase();
+      const status = (per[key] || per[r] || '').toString().toLowerCase();
+      if (status === 'read' || readList.includes(r)) {
+        read += 1;
+        sent += 1;
+      } else if (status === 'sent' || status === 'delivered' || status === 'pending') {
+        sent += 1;
+      }
+    });
+    const pct = Math.round((read / total) * 100);
+    return { total, read, sent, pct };
   };
 
   useEffect(() => {
@@ -306,7 +460,7 @@ export default function MessagesPage() {
   if (!canList) {
     return (
       <ProtectedLayout>
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div className="glass-panel rounded-2xl p-6 soft-shadow">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
           <p className="text-gray-600">
             No tienes permisos para ver el historial de mensajes.
@@ -337,7 +491,7 @@ export default function MessagesPage() {
           )}
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="glass-panel rounded-2xl p-4 soft-shadow flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
           <input
             type="search"
             value={search}
@@ -353,7 +507,7 @@ export default function MessagesPage() {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="glass-panel rounded-2xl soft-shadow overflow-hidden">
           {loading && (
             <p className="p-4 text-sm text-gray-600">Cargando mensajes...</p>
           )}
@@ -419,17 +573,27 @@ export default function MessagesPage() {
                           </span>
                           <span
                             className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                              (message.emailStatus || message.status || '').toLowerCase() === 'sent'
+                              aggregateEmailChannelStatus(message) === 'sent'
                                 ? 'bg-green-100 text-green-700'
-                                : (message.emailStatus || message.status || '').toLowerCase() === 'pending'
+                                : aggregateEmailChannelStatus(message) === 'pending'
                                   ? 'bg-yellow-100 text-yellow-700'
-                                  : (message.emailStatus || message.status || '').toLowerCase() === 'failed'
+                                  : aggregateEmailChannelStatus(message) === 'failed'
                                     ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-700'
+                                    : aggregateEmailChannelStatus(message) === 'read'
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-gray-100 text-gray-700'
                             }`}
                           >
-                            <span className="mr-1">{statusIcon(message.emailStatus || message.status)}</span>
-                            {statusLabel(message.emailStatus || message.status)}
+                            <span className="mr-1">{statusIcon(aggregateEmailChannelStatus(message))}</span>
+                            {statusLabel(aggregateEmailChannelStatus(message))}
+                          </span>
+                          <span className="text-[11px] text-gray-500">
+                            {(() => {
+                              const prog = emailProgress(message);
+                              return prog.total
+                                ? `Leídos: ${prog.read}/${prog.total} (${prog.pct}%)`
+                                : 'Sin destinatarios';
+                            })()}
                           </span>
                         </div>
                       )}
@@ -441,19 +605,27 @@ export default function MessagesPage() {
                           </span>
                           <span
                             className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                              (message.appStatus || 'pending').toLowerCase() === 'read'
+                              aggregateAppChannelStatus(message) === 'read'
                                 ? 'bg-blue-100 text-blue-700'
-                                : (message.appStatus || 'pending').toLowerCase() === 'sent'
+                                : aggregateAppChannelStatus(message) === 'sent'
                                   ? 'bg-green-100 text-green-700'
-                                  : (message.appStatus || 'pending').toLowerCase() === 'pending'
+                                  : aggregateAppChannelStatus(message) === 'pending'
                                     ? 'bg-yellow-100 text-yellow-700'
-                                  : (message.appStatus || 'pending').toLowerCase() === 'failed'
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-700'
+                                    : aggregateAppChannelStatus(message) === 'failed'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-gray-100 text-gray-700'
                             }`}
                           >
-                            <span className="mr-1">{statusIcon(message.appStatus || 'pending')}</span>
-                            {statusLabel(message.appStatus || 'pending')}
+                            <span className="mr-1">{statusIcon(aggregateAppChannelStatus(message))}</span>
+                            {statusLabel(aggregateAppChannelStatus(message))}
+                          </span>
+                          <span className="text-[11px] text-gray-500">
+                            {(() => {
+                              const prog = appProgress(message);
+                              return prog.total
+                                ? `Leídos: ${prog.read}/${prog.total} (${prog.pct}%)`
+                                : 'Sin destinatarios';
+                            })()}
                           </span>
                         </div>
                       )}
@@ -642,26 +814,155 @@ export default function MessagesPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (!detailRef.current) return;
+                    if (!selectedMessage) return;
+                    const notiflowLogo = notiflowLogoBase64;
+                    const schoolLogo =
+                      selectedMessage.schoolLogo ||
+                      selectedMessage.schoolLogoUrl ||
+                      badgeLogoBase64;
+                    const schoolName =
+                      selectedMessage.schoolName ||
+                      selectedMessage.school ||
+                      currentUser?.schoolName ||
+                      'Colegio';
+                    const created =
+                      selectedMessage.createdAt ? new Date(selectedMessage.createdAt).toLocaleString() : '';
+                    const emailProg = emailProgress(selectedMessage);
+                    const appProg = appProgress(selectedMessage);
+                    const channels = Array.isArray(selectedMessage.channels)
+                      ? selectedMessage.channels.join(', ')
+                      : '—';
+                    const attachments = Array.isArray(selectedMessage.attachments)
+                      ? selectedMessage.attachments
+                      : [];
+                    const hasEmail = Array.isArray(selectedMessage.channels) && selectedMessage.channels.includes('email');
+                    const hasApp = Array.isArray(selectedMessage.channels) && selectedMessage.channels.includes('app');
+                    const contentHtml = (selectedMessage.content || '')
+                      .toString()
+                      .replace(/\n/g, '<br/>');
+                    const inlineImages =
+                      attachments
+                        .filter((a) => a.inline && a.downloadUrl && (a.mimeType || '').startsWith('image/'))
+                        .map(
+                          (a) =>
+                            `<div style="margin-top:10px;"><img src="${a.downloadUrl}" alt="${a.fileName || 'imagen'}" style="max-width:100%; border-radius:10px;"/></div>`
+                        )
+                        .join('') || '';
+
+                    const recipientsTable = (selectedMessage.recipients || [])
+                      .map((r) => {
+                        if (!r) return '';
+                        const name = recipientDisplayName(r);
+                        const emailStatus = hasEmail ? resolveEmailStatus(r).toLowerCase() : '';
+                        const appRecipient = hasApp && isAppRecipient(r);
+                        const appStatus = appRecipient ? resolveAppStatus(r).toLowerCase() : '';
+                        const emailSent = hasEmail ? emailStatus !== 'failed' : false;
+                        const emailRead = hasEmail ? emailStatus === 'read' : false;
+                        const appSent = appRecipient ? appStatus !== 'failed' : false;
+                        const appRead = appRecipient ? appStatus === 'read' : false;
+                        return `
+                          <tr>
+                            <td>${name || '—'}</td>
+                            <td>${r}</td>
+                            <td>${hasEmail ? (emailSent ? '✔' : '✖') : '—'}</td>
+                            <td>${hasEmail ? (emailRead ? '✔✔' : '🕒') : '—'}</td>
+                            <td>${appRecipient ? (appSent ? '✔' : '✖') : '—'}</td>
+                            <td>${appRecipient ? (appRead ? '✔✔' : '🕒') : '—'}</td>
+                          </tr>
+                        `;
+                      })
+                      .join('');
+
                     const html = `
                       <html>
                         <head>
                           <title>Detalle de envío</title>
                           <style>
-                            body { font-family: Arial, sans-serif; color: #111827; padding: 16px; }
-                            h1 { font-size: 20px; margin-bottom: 8px; }
-                            h2 { font-size: 16px; margin: 12px 0 6px; }
-                            .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
-                            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                            th, td { border: 1px solid #e5e7eb; padding: 6px; text-align: left; }
-                            .chips span { display: inline-block; padding: 4px 8px; background: #f3f4f6; border-radius: 9999px; margin-right: 6px; }
+                            body { font-family: 'Inter', Arial, sans-serif; color: #0f172a; padding: 24px; background: #f8fafc; }
+                            .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+                            .brand { display: flex; align-items: center; gap: 12px; }
+                            .brand img { height: 42px; }
+                            .school img { height: 46px; border-radius: 10px; }
+                            h1 { font-size: 22px; margin: 0 0 10px; }
+                            .card { border: 1px solid #e5e7eb; border-radius: 14px; padding: 14px; margin-bottom: 14px; background: #ffffff; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+                            .section-title { text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; font-size: 11px; margin: 0 0 6px; }
+                            .meta { color: #475569; font-size: 12px; margin: 4px 0; }
+                            table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+                            th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+                            .pill { display: inline-block; padding: 6px 10px; border-radius: 9999px; background: #ecfdf3; color: #166534; font-weight: 600; font-size: 12px; }
+                            .progress { font-size: 12px; color: #475569; margin-top: 4px; }
+                            .attachments { list-style: disc; padding-left: 16px; color: #0f172a; }
+                            .recipients th { background: #f8fafc; }
                           </style>
                         </head>
                         <body>
-                          <h1>Detalle de envío</h1>
-                          ${detailRef.current.innerHTML}
+                          <div class="header">
+                            <div class="brand">
+                              <img src="${notiflowLogo}" alt="Notiflow" />
+                              <div>
+                                <div style="font-weight:700; color:#0f172a;">Notiflow</div>
+                                <div style="font-size:12px; color:#475569;">Registro de envío</div>
+                              </div>
+                            </div>
+                            ${schoolLogo ? `<div class="school"><img src="${schoolLogo}" alt="${schoolName}" /></div>` : ''}
+                          </div>
+                          <h1>Detalle del mensaje</h1>
+                          <div class="card">
+                            <div class="section-title">Resumen</div>
+                            <div class="meta"><strong>Motivo:</strong> ${selectedMessage.reason || '—'}</div>
+                            <div class="meta"><strong>Fecha:</strong> ${created || '—'}</div>
+                            <div class="meta"><strong>Colegio:</strong> ${schoolName}</div>
+                            <div class="meta"><strong>Enviado por:</strong> ${senderDisplayName(selectedMessage.senderName, selectedMessage.senderEmail)} (${selectedMessage.senderEmail || '—'})</div>
+                            <div class="meta"><strong>Canales:</strong> ${channels}</div>
+                            <div class="meta"><strong>Destinatarios:</strong> ${selectedMessage.recipients?.length || 0}</div>
+                            <div class="meta"><strong>Email leídos:</strong> ${emailProg.read}/${emailProg.total} (${emailProg.pct}%)</div>
+                            <div class="meta"><strong>App leídos:</strong> ${appProg.read}/${appProg.total} (${appProg.pct}%)</div>
+                          </div>
+                          <div class="card">
+                            <div class="section-title">Contenido</div>
+                            <div style="white-space:pre-wrap; line-height:1.6; color:#0f172a;">${contentHtml || '—'}</div>
+                          </div>
+                          <div class="card">
+                            <div class="section-title">Adjuntos</div>
+                            ${
+                              attachments.length
+                                ? `<ul class="attachments">${attachments
+                                    .map(
+                                      (att) =>
+                                        `<li>${att.fileName || 'Archivo'} ${att.mimeType ? '(' + att.mimeType + ')' : ''}</li>`
+                                  )
+                                  .join('')}</ul>`
+                                : '<div class="meta">Sin adjuntos</div>'
+                            }
+                            ${inlineImages}
+                          </div>
+                          <div class="card">
+                            <div class="section-title">Destinatarios</div>
+                            ${
+                              (selectedMessage.recipients || []).length
+                                ? `
+                                  <table class="recipients">
+                                    <thead>
+                                      <tr>
+                                        <th>Nombre</th>
+                                        <th>Email</th>
+                                        <th>Correo enviado</th>
+                                        <th>Correo leído</th>
+                                        <th>App enviada</th>
+                                        <th>App leída</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      ${recipientsTable}
+                                    </tbody>
+                                  </table>
+                                `
+                                : '<div class="meta">Sin destinatarios</div>'
+                            }
+                          </div>
                         </body>
-                      </html>`;
+                      </html>
+                    `;
                     const printWin = window.open('', '_blank');
                     if (!printWin) return;
                     printWin.document.open();
@@ -702,7 +1003,7 @@ export default function MessagesPage() {
                 </div>
                 <div className="mt-3">
                   <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Mensaje</p>
-                    <div className="bg-white border border-gray-200 rounded-lg p-4 text-gray-800 whitespace-pre-line shadow-inner space-y-3">
+                  <div className="glass-panel rounded-xl p-4 text-gray-800 whitespace-pre-line shadow-inner space-y-3">
                     <div className="break-words leading-relaxed">{renderRichText(selectedMessage.content)}</div>
                     {Array.isArray(selectedMessage.attachments) &&
                       selectedMessage.attachments
@@ -727,7 +1028,7 @@ export default function MessagesPage() {
                 </div>
               </div>
               {Array.isArray(selectedMessage.attachments) && selectedMessage.attachments.length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                <div className="glass-panel rounded-xl p-4 soft-shadow">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-gray-500">Adjuntos</p>
@@ -791,7 +1092,9 @@ export default function MessagesPage() {
                           <th className="px-3 py-2 text-left w-2/5">Destinatario</th>
                           <th className="px-3 py-2 text-left">Correo enviado</th>
                           <th className="px-3 py-2 text-left">Correo recibido</th>
+                          <th className="px-3 py-2 text-left">Correo leído</th>
                           <th className="px-3 py-2 text-left">App enviada</th>
+                          <th className="px-3 py-2 text-left">App recibida</th>
                           <th className="px-3 py-2 text-left">App leída</th>
                           <th className="px-3 py-2 text-left">Acciones</th>
                         </tr>
@@ -800,38 +1103,60 @@ export default function MessagesPage() {
                         {(selectedMessage.recipients || [])
                           .filter((r) =>
                             recipientFilter
-                              ? r.toLowerCase().includes(recipientFilter.toLowerCase())
+                              ? r.toLowerCase().includes(recipientFilter.toLowerCase()) ||
+                                recipientDisplayName(r).toLowerCase().includes(recipientFilter.toLowerCase())
                               : true
                           )
                           .map((r) => {
+                          const name = recipientDisplayName(r);
                           const hasEmail = Array.isArray(selectedMessage.channels) && selectedMessage.channels.includes('email');
                           const hasApp = Array.isArray(selectedMessage.channels) && selectedMessage.channels.includes('app');
-                          const emailSent = hasEmail ? ((selectedMessage.emailStatus || selectedMessage.status || '').toLowerCase() !== 'failed') : false;
-                          const perRecipientAppStatus =
-                            selectedMessage.appStatuses?.[r] ||
-                            (Array.isArray(selectedMessage.appReadBy) && selectedMessage.appReadBy.includes(r) ? 'read' : (selectedMessage.appStatus || 'pending'));
-                          const appSent = hasApp ? (perRecipientAppStatus.toLowerCase() !== 'failed') : false;
-                          const appRead = hasApp ? (perRecipientAppStatus.toLowerCase() === 'read') : false;
+                          const emailStatusVal = hasEmail ? resolveEmailStatus(r).toLowerCase() : 'pending';
+                          const emailSent = hasEmail ? emailStatusVal !== 'failed' : false;
+                          const emailRead = hasEmail ? emailStatusVal === 'read' : false;
+                          const appRecipient = hasApp && isAppRecipient(r);
+                          const perRecipientAppStatus = appRecipient ? resolveAppStatus(r).toLowerCase() : '';
+                          const appSent = appRecipient ? perRecipientAppStatus !== 'failed' : false;
+                          const appRead = appRecipient ? perRecipientAppStatus === 'read' : false;
                           const emailStateLabel = emailSent ? 'Enviado' : 'No enviado';
-                          const appStateLabel = appSent ? 'Enviado' : 'No enviado';
+                          const emailReadLabel = emailRead ? 'Leído' : 'No leído';
+                          const appStateLabel = appRecipient ? (appSent ? 'Enviado' : 'No enviado') : 'No aplica';
                           const icon = (state?: string, positive?: boolean) => {
                             const val = (state ?? '').toString().toLowerCase();
                             if (val === 'read' || (positive != null && positive)) return '✔✔';
                             if (val === 'sent' || val === 'delivered') return '✔';
-                            if (val === 'pending') return '⌛';
+                            if (val === 'pending') return '🕒';
                             return '✖';
                           };
                           return (
                             <tr key={r} className="hover:bg-gray-50">
-                              <td className="px-3 py-2 text-gray-800 break-all">{r}</td>
-                              <td className="px-3 py-2">{hasEmail ? icon(selectedMessage.emailStatus, emailSent) : '—'}</td>
+                              <td className="px-3 py-2 text-gray-800 break-all">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-semibold text-gray-900 break-all">{name || '—'}</span>
+                                  <span className="text-xs text-gray-600 break-all">{r}</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2">{hasEmail ? icon(emailStatusVal, emailSent) : '—'}</td>
                               <td className="px-3 py-2">{hasEmail ? (emailSent ? '✔' : '—') : '—'}</td>
+                              <td className="px-3 py-2">{hasEmail ? (emailRead ? '✔✔' : '🕒') : '—'}</td>
                               <td className="px-3 py-2">{hasApp ? icon(perRecipientAppStatus, appSent) : '—'}</td>
-                              <td className="px-3 py-2">{hasApp ? (appRead ? '✔✔' : '⌛') : '—'}</td>
+                              <td className="px-3 py-2">{hasApp ? (appSent ? '✔' : '—') : '—'}</td>
+                              <td className="px-3 py-2">{hasApp ? (appRead ? '✔✔' : '🕒') : '—'}</td>
                               <td className="px-3 py-2">
                                 <button
                                   type="button"
-                                  onClick={() => printRecipient(r, emailStateLabel, appStateLabel, appRead)}
+                                  onClick={() =>
+                                    printRecipient(
+                                      r,
+                                      emailStateLabel,
+                                      emailSent,
+                                      emailRead,
+                                      appStateLabel,
+                                      appSent,
+                                      appRead,
+                                      name
+                                    )
+                                  }
                                   className="text-primary text-xs font-semibold hover:underline"
                                 >
                                   Exportar PDF
@@ -856,17 +1181,19 @@ export default function MessagesPage() {
                       </span>
                       <span
                         className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                          (selectedMessage.emailStatus || selectedMessage.status || '').toLowerCase() === 'sent'
+                          aggregateEmailChannelStatus(selectedMessage) === 'sent'
                             ? 'bg-green-100 text-green-700'
-                            : (selectedMessage.emailStatus || selectedMessage.status || '').toLowerCase() === 'pending'
+                            : aggregateEmailChannelStatus(selectedMessage) === 'pending'
                               ? 'bg-yellow-100 text-yellow-700'
-                              : (selectedMessage.emailStatus || selectedMessage.status || '').toLowerCase() === 'failed'
+                              : aggregateEmailChannelStatus(selectedMessage) === 'failed'
                                 ? 'bg-red-100 text-red-700'
-                                : 'bg-gray-100 text-gray-700'
+                                : aggregateEmailChannelStatus(selectedMessage) === 'read'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-gray-100 text-gray-700'
                         }`}
                       >
-                        <span className="mr-1">{statusIcon(selectedMessage.emailStatus || selectedMessage.status)}</span>
-                        {statusLabel(selectedMessage.emailStatus || selectedMessage.status)}
+                        <span className="mr-1">{statusIcon(aggregateEmailChannelStatus(selectedMessage))}</span>
+                        {statusLabel(aggregateEmailChannelStatus(selectedMessage))}
                       </span>
                     </div>
                   )}
@@ -878,19 +1205,19 @@ export default function MessagesPage() {
                       </span>
                       <span
                         className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                          (selectedMessage.appStatus || 'pending').toLowerCase() === 'read'
+                          aggregateAppChannelStatus(selectedMessage) === 'read'
                             ? 'bg-blue-100 text-blue-700'
-                            : (selectedMessage.appStatus || 'pending').toLowerCase() === 'sent'
+                            : aggregateAppChannelStatus(selectedMessage) === 'sent'
                               ? 'bg-green-100 text-green-700'
-                              : (selectedMessage.appStatus || 'pending').toLowerCase() === 'pending'
+                              : aggregateAppChannelStatus(selectedMessage) === 'pending'
                                 ? 'bg-yellow-100 text-yellow-700'
-                                : (selectedMessage.appStatus || 'pending').toLowerCase() === 'failed'
+                                : aggregateAppChannelStatus(selectedMessage) === 'failed'
                                   ? 'bg-red-100 text-red-700'
                                   : 'bg-gray-100 text-gray-700'
                         }`}
                       >
-                        <span className="mr-1">{statusIcon(selectedMessage.appStatus || 'pending')}</span>
-                        {statusLabel(selectedMessage.appStatus || 'pending')}
+                        <span className="mr-1">{statusIcon(aggregateAppChannelStatus(selectedMessage))}</span>
+                        {statusLabel(aggregateAppChannelStatus(selectedMessage))}
                       </span>
                     </div>
                   )}

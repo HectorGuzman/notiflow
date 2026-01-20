@@ -141,11 +141,19 @@ export default function ReportsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const total = filtered.length;
-  const sentEmail = messages.filter((m) => (m.emailStatus || '').toLowerCase() === 'sent').length;
-  const failedEmail = messages.filter((m) => (m.emailStatus || '').toLowerCase() === 'failed').length;
-  const appPending = messages.filter((m) => (m.appStatus || '').toLowerCase() === 'pending').length;
-  const appRead = messages.filter((m) => (m.appStatus || '').toLowerCase() === 'read').length;
+  // Métricas de envío (totales del mes actual, sin filtro de búsqueda)
+  const now = new Date();
+  const baseMessages = messages.filter((m) => {
+    const d = m.createdAt ? new Date(m.createdAt) : null;
+    if (!d || Number.isNaN(d.getTime())) return false;
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const total = baseMessages.length;
+  const emailStatus = (m: any) => (m.emailStatus || '').toLowerCase();
+  const appStatus = (m: any) => (m.appStatus || '').toLowerCase();
+
+  const sentEmail = baseMessages.filter((m) => ['sent', 'delivered'].includes(emailStatus(m))).length;
+  const failedEmail = baseMessages.filter((m) => emailStatus(m) === 'failed').length;
   const totalUsers = users.length;
   const totalStudents = students.length;
   const guardianEmailSet = useMemo(() => {
@@ -161,7 +169,14 @@ export default function ReportsPage() {
     return set;
   }, [students]);
   const guardiansWithEmail = guardianEmailSet.size;
-  const studentsWithEmail = students.filter((s) => s.email).length;
+  const studentHasEmail = (s: any) => {
+    const selfEmail = s?.email && s.email.trim() !== '';
+    const guardianEmails =
+      (s?.guardianEmails || []).some((e: string) => e && e.trim() !== '') ||
+      (s?.guardians || []).some((g: any) => g?.email && g.email.trim() !== '');
+    return selfEmail || guardianEmails;
+  };
+  const studentsWithEmail = students.filter((s) => studentHasEmail(s)).length;
   const studentsWithoutEmail = Math.max(0, totalStudents - studentsWithEmail);
   const appActiveNumber = useMemo(() => {
     const global =
@@ -177,10 +192,11 @@ export default function ReportsPage() {
   }, [appActiveUsers, appActiveBySchool]);
   const appActiveCapped = totalStudents === 0 || guardiansWithEmail === 0 ? 0 : appActiveNumber;
   const emailStatusCounts = (() => {
-    const base = { sent: 0, failed: 0, other: 0 };
-    messages.forEach((m) => {
+    const base = { sent: 0, failed: 0, read: 0, other: 0 };
+    baseMessages.forEach((m) => {
       const s = (m.emailStatus || '').toLowerCase();
       if (s === 'sent' || s === 'delivered') base.sent++;
+      else if (s === 'read' || s === 'opened') base.read++;
       else if (s === 'failed') base.failed++;
       else base.other++;
     });
@@ -188,7 +204,7 @@ export default function ReportsPage() {
   })();
   const appStatusCounts = (() => {
     const base = { read: 0, pending: 0, sent: 0, other: 0 };
-    messages.forEach((m) => {
+    baseMessages.forEach((m) => {
       const s = (m.appStatus || '').toLowerCase();
       if (s === 'read') base.read++;
       else if (s === 'pending') base.pending++;
@@ -198,6 +214,8 @@ export default function ReportsPage() {
     return base;
   })();
   const appSent = appStatusCounts.sent;
+  const appRead = appStatusCounts.read;
+  const emailRead = emailStatusCounts.read;
   const weeklyUsage = useMemo(() => {
     const counts = [0, 0, 0, 0]; // 0: semana actual, 1: hace 1 semana, etc.
     const now = new Date();
@@ -221,7 +239,7 @@ export default function ReportsPage() {
   if (!canView) {
     return (
       <ProtectedLayout>
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div className="glass-panel rounded-2xl p-6 soft-shadow">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
           <p className="text-gray-600">No tienes permisos para ver los reportes.</p>
         </div>
@@ -246,23 +264,55 @@ export default function ReportsPage() {
           </div>
         )}
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-3">
+        <div className="glass-panel rounded-2xl soft-shadow p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500">Mensajería</p>
               <h2 className="text-lg font-semibold text-gray-900">Indicadores de envíos</h2>
+              <p className="text-xs text-gray-500">Datos del mes en curso ({now.toLocaleString('es-CL', { month: 'long', year: 'numeric' })})</p>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard title="Mensajes (año)" value={loading ? '—' : total} />
-            <StatCard title="Email enviados" value={loading ? '—' : sentEmail} />
-            <StatCard title="Email fallidos" value={loading ? '—' : failedEmail} />
-            <StatCard title="App enviados" value={loading ? '—' : appSent} />
-            <StatCard title="App leídos" value={loading ? '—' : appRead} />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <StatCard
+              title="Mensajes totales enviados"
+              value={loading ? '—' : total}
+              accent="border-indigo-200 bg-indigo-50"
+              text="text-indigo-800"
+            />
+            <StatCard
+              title="Email enviados"
+              value={loading ? '—' : sentEmail}
+              accent="border-cyan-200 bg-cyan-50"
+              text="text-cyan-800"
+            />
+            <StatCard
+              title="Email leídos"
+              value={loading ? '—' : emailRead}
+              accent="border-cyan-200 bg-cyan-50"
+              text="text-cyan-800"
+            />
+            <StatCard
+              title="Email fallidos"
+              value={loading ? '—' : failedEmail}
+              accent="border-cyan-200 bg-cyan-50"
+              text="text-cyan-800"
+            />
+            <StatCard
+              title="App enviados"
+              value={loading ? '—' : appSent}
+              accent="border-emerald-200 bg-emerald-50"
+              text="text-emerald-800"
+            />
+            <StatCard
+              title="App leídos"
+              value={loading ? '—' : appRead}
+              accent="border-emerald-200 bg-emerald-50"
+              text="text-emerald-800"
+            />
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-3">
+        <div className="glass-panel rounded-2xl soft-shadow p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-500">Usuarios</p>
@@ -320,12 +370,22 @@ export default function ReportsPage() {
   );
 }
 
-function StatCard({ title, value }: { title: string; value: string | number }) {
+function StatCard({
+  title,
+  value,
+  accent = '',
+  text = 'text-gray-900',
+}: {
+  title: string;
+  value: string | number;
+  accent?: string;
+  text?: string;
+}) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+    <div className={`glass-panel rounded-2xl p-5 soft-shadow border ${accent}`}>
       <p className="text-sm text-gray-600">{title}</p>
       <div className="mt-2 flex items-baseline gap-2">
-        <span className="text-3xl font-bold text-gray-900">{value}</span>
+        <span className={`text-3xl font-bold ${text}`}>{value}</span>
       </div>
     </div>
   );
@@ -360,7 +420,7 @@ function ChartCard({
 }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+    <div className="glass-panel rounded-2xl p-4 soft-shadow">
       <div className="mb-3">
         <p className="text-xs uppercase tracking-wide text-gray-500">{title}</p>
         {subtitle && <p className="text-sm text-gray-600">{subtitle}</p>}

@@ -196,17 +196,22 @@ public class EventService {
 
     public EventDto create(EventRequest request, CurrentUser user) {
         String role = user.role() != null ? user.role().toUpperCase() : "";
-        boolean canCreate = role.equals("SUPERADMIN") || role.equals("ADMIN") || role.equals("TEACHER");
+        boolean canCreate = role.equals("SUPERADMIN")
+                || role.equals("ADMIN")
+                || role.equals("TEACHER")
+                || role.equals("COORDINATOR")
+                || role.equals("GESTION_ESCOLAR");
         if (!canCreate) {
-            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "Solo profesores o administradores pueden crear eventos");
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permisos para crear eventos");
         }
         String schoolId = request.schoolId() != null && !request.schoolId().isBlank()
                 ? request.schoolId()
                 : user.schoolId();
         if (schoolId == null || schoolId.isBlank()) {
-            schoolId = "global";
+            schoolId = user.schoolId() != null && !user.schoolId().isBlank() ? user.schoolId() : "global";
         }
-        if (!"global".equalsIgnoreCase(user.schoolId()) && !schoolId.equalsIgnoreCase(user.schoolId())) {
+        boolean isGlobalAdmin = user.isSuperAdmin() || user.isGlobalAdmin();
+        if (!isGlobalAdmin && user.schoolId() != null && !user.schoolId().isBlank() && !schoolId.equalsIgnoreCase(user.schoolId())) {
             throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes crear eventos en otro colegio");
         }
 

@@ -30,7 +30,8 @@ export default function SettingsPage() {
   const hasPermission = useAuthStore((state) => state.hasPermission);
   const canManageUsers =
     hasPermission('users.create') ||
-    hasPermission('users.delete');
+    hasPermission('users.delete') ||
+    hasPermission('users.update');
   const canUpdateUsers = hasPermission('users.update');
   const canManageSchools = hasPermission('schools.manage');
   const canManageAi = canManageSchools;
@@ -101,6 +102,9 @@ export default function SettingsPage() {
   const [showEditSchool, setShowEditSchool] = useState(false);
   const [createLogoFile, setCreateLogoFile] = useState<File | null>(null);
   const [aiSuccess, setAiSuccess] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const userPageSize = 10;
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState('');
   const defaultRewritePrompt = `Mejora la redacción del siguiente mensaje manteniendo el significado.
 Adáptalo a un tono {tone}, claro y respetuoso. Devuelve solo el texto mejorado sin marcas adicionales.
 Mensaje original:
@@ -140,7 +144,7 @@ Información sensible no académica`;
   useEffect(() => {
     if (!canAccessSettings) return;
     if (canManageUsers) {
-      loadUsers();
+      loadUsers(userSearch);
     }
     if (canManageSchools) {
       loadSchools();
@@ -169,11 +173,25 @@ Información sensible no académica`;
     }
   }, [canManageUsers, isGlobalAdmin, user]);
 
-  const loadUsers = async () => {
+  useEffect(() => {
+    setUserPage(1);
+  }, [userSearch]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedUserSearch(userSearch.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [userSearch]);
+
+  useEffect(() => {
+    if (!canManageUsers) return;
+    loadUsers(debouncedUserSearch);
+  }, [debouncedUserSearch, canManageUsers]);
+
+  const loadUsers = async (query?: string) => {
     setLoadingUsers(true);
     setError('');
     try {
-      const res = await apiClient.getUsers();
+      const res = await apiClient.getUsers(query ? { q: query } : undefined);
       setUsers(res.data || []);
     } catch (err: any) {
       const msg =
@@ -489,6 +507,11 @@ Información sensible no académica`;
         u.rut?.toLowerCase().includes(term)
     );
   }, [userSearch, users]);
+  const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const paginatedUsers = useMemo(() => {
+    const start = (userPage - 1) * userPageSize;
+    return filteredUsers.slice(start, start + userPageSize);
+  }, [filteredUsers, userPage, userPageSize]);
 
   const handleCreateOrUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -557,7 +580,7 @@ Información sensible no académica`;
   if (!canAccessSettings) {
     return (
       <ProtectedLayout>
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div className="glass-panel rounded-2xl p-6 soft-shadow">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
           <p className="text-gray-600">No tienes permisos para acceder a configuración.</p>
         </div>
@@ -590,7 +613,7 @@ Información sensible no académica`;
             <button
               type="button"
               onClick={() => setShowUserModal(true)}
-              className="group bg-white border border-gray-200 rounded-xl p-5 text-left shadow-sm hover:shadow-md transition-all flex items-start gap-3"
+              className="group glass-panel rounded-2xl p-5 text-left soft-shadow hover:translate-y-[-2px] transition-all flex items-start gap-3"
             >
               <div className="p-2.5 bg-primary/10 rounded-lg text-primary">
                 <FiUsers size={20} />
@@ -609,7 +632,7 @@ Información sensible no académica`;
             <button
               type="button"
               onClick={() => setShowSchoolModal(true)}
-              className="group bg-white border border-gray-200 rounded-xl p-5 text-left shadow-sm hover:shadow-md transition-all flex items-start gap-3"
+              className="group glass-panel rounded-2xl p-5 text-left soft-shadow hover:translate-y-[-2px] transition-all flex items-start gap-3"
             >
               <div className="p-2.5 bg-primary/10 rounded-lg text-primary">
                 <FiHome size={20} />
@@ -628,7 +651,7 @@ Información sensible no académica`;
             <button
               type="button"
               onClick={() => setShowImportUsersModal(true)}
-              className="group bg-white border border-gray-200 rounded-xl p-5 text-left shadow-sm hover:shadow-md transition-all flex items-start gap-3"
+              className="group glass-panel rounded-2xl p-5 text-left soft-shadow hover:translate-y-[-2px] transition-all flex items-start gap-3"
             >
               <div className="p-2.5 bg-primary/10 rounded-lg text-primary">
                 <FiUpload size={20} />
@@ -647,7 +670,7 @@ Información sensible no académica`;
             <button
               type="button"
               onClick={() => setShowImportStudentsModal(true)}
-              className="group bg-white border border-gray-200 rounded-xl p-5 text-left shadow-sm hover:shadow-md transition-all flex items-start gap-3"
+              className="group glass-panel rounded-2xl p-5 text-left soft-shadow hover:translate-y-[-2px] transition-all flex items-start gap-3"
             >
               <div className="p-2.5 bg-primary/10 rounded-lg text-primary">
                 <FiDatabase size={20} />
@@ -666,7 +689,7 @@ Información sensible no académica`;
             <button
               type="button"
               onClick={() => setShowAiModal(true)}
-              className="group bg-white border border-gray-200 rounded-xl p-5 text-left shadow-sm hover:shadow-md transition-all flex items-start gap-3"
+              className="group glass-panel rounded-2xl p-5 text-left soft-shadow hover:translate-y-[-2px] transition-all flex items-start gap-3"
             >
               <div className="p-2.5 bg-primary/10 rounded-lg text-primary">
                 <FiCpu size={20} />
@@ -691,20 +714,6 @@ Información sensible no académica`;
         size="xl"
       >
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <input
-                type="search"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="Buscar por nombre, email o rol"
-                className="w-72 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-              />
-              <span className="text-xs text-gray-500">{filteredUsers.length} resultado(s)</span>
-            </div>
-            {loadingUsers && <span className="text-xs text-gray-500">Cargando usuarios...</span>}
-          </div>
-
           {(canCreateUsers || canUpdateUsers) && (
             <form className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-gray-100 rounded-lg p-4" onSubmit={handleCreateOrUpdateUser}>
               <div>
@@ -825,11 +834,23 @@ Información sensible no académica`;
           )}
 
           <div className="border-t border-gray-200 pt-4">
-            <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
+            <div>
               <h3 className="text-lg font-semibold text-gray-900">Listado</h3>
-              {loadingUsers && <span className="text-sm text-gray-500">Cargando...</span>}
+              <p className="text-xs text-gray-500">Busca en todos los usuarios de la plataforma</p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <input
+                type="search"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Buscar por nombre, email, rol o colegio"
+                className="w-full sm:w-72 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
+              />
+              {loadingUsers && <span className="text-xs text-gray-500">Cargando...</span>}
+            </div>
+          </div>
+            <div className="overflow-x-auto max-h-[360px]">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left text-gray-600">
@@ -842,15 +863,15 @@ Información sensible no académica`;
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredUsers.map((u) => (
+                  {paginatedUsers.map((u) => (
                     <tr key={u.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium text-gray-900">{u.name}</td>
                       <td className="px-3 py-2 text-gray-700">{u.email}</td>
                       <td className="px-3 py-2 text-gray-700">{u.rut || '—'}</td>
                       <td className="px-3 py-2 text-gray-700">{u.role}</td>
                       <td className="px-3 py-2 text-gray-700">{u.schoolName || u.schoolId}</td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-3">
+                      <td className="px-3 py-2 text-right min-w-[160px]">
+                        <div className="flex flex-wrap justify-end gap-2">
                           {canUpdateUsers && (
                             <button
                               type="button"
@@ -865,7 +886,7 @@ Información sensible no académica`;
                                   schoolName: u.schoolName || '',
                                 });
                               }}
-                              className="text-xs text-primary hover:underline"
+                              className="text-xs px-3 py-1 rounded-lg border border-primary text-primary hover:bg-primary/10"
                             >
                               Editar
                             </button>
@@ -874,7 +895,7 @@ Información sensible no académica`;
                             <button
                               type="button"
                               onClick={() => openDeleteModal(u)}
-                              className="text-xs text-red-600 hover:underline"
+                              className="text-xs px-3 py-1 rounded-lg border border-red-300 text-red-600 hover:bg-red-50"
                             >
                               Eliminar
                             </button>
@@ -899,6 +920,27 @@ Información sensible no académica`;
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="flex items-center justify-between mt-3 text-sm text-gray-600">
+              <button
+                type="button"
+                onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                disabled={userPage <= 1}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <span>
+                Página {userPage} de {userTotalPages} ({filteredUsers.length} usuario(s))
+              </span>
+              <button
+                type="button"
+                onClick={() => setUserPage((p) => Math.min(userTotalPages, p + 1))}
+                disabled={userPage >= userTotalPages}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-50"
+              >
+                Siguiente
+              </button>
             </div>
           </div>
         </div>

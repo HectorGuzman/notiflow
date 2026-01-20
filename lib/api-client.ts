@@ -4,11 +4,13 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.notiflow.ap
 
 class APIClient {
   client: AxiosInstance;
+  private isRefreshing = false;
+  private refreshPromise: Promise<any> | null = null;
 
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 20000, // llamadas normales
+      timeout: 45000, // llamadas normales (subimos para evitar timeouts al usar IA)
       headers: {
         'Content-Type': 'application/json',
       },
@@ -27,9 +29,44 @@ class APIClient {
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
-        if (error.response?.status === 401) {
-          localStorage.removeItem('authToken');
-          window.location.href = '/login';
+        const original = error.config as any;
+        const status = error.response?.status;
+        if (status === 401) {
+          const refreshToken = localStorage.getItem('refreshToken');
+          if (!refreshToken) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/login';
+            return Promise.reject(error);
+          }
+          if (this.isRefreshing && this.refreshPromise) {
+            return this.refreshPromise.then(() => {
+              original.headers = original.headers || {};
+              original.headers.Authorization = `Bearer ${localStorage.getItem('authToken')}`;
+              return this.client(original);
+            });
+          }
+          this.isRefreshing = true;
+          this.refreshPromise = this.refresh(refreshToken)
+            .then((resp) => {
+              const { token, refreshToken: newRefresh } = resp.data || {};
+              if (token) localStorage.setItem('authToken', token);
+              if (newRefresh) localStorage.setItem('refreshToken', newRefresh);
+              original.headers = original.headers || {};
+              original.headers.Authorization = `Bearer ${token}`;
+              return this.client(original);
+            })
+            .catch((err) => {
+              localStorage.removeItem('authToken');
+              localStorage.removeItem('refreshToken');
+              window.location.href = '/login';
+              return Promise.reject(err);
+            })
+            .finally(() => {
+              this.isRefreshing = false;
+              this.refreshPromise = null;
+            });
+          return this.refreshPromise;
         }
         return Promise.reject(error);
       }
@@ -48,6 +85,10 @@ class APIClient {
   // Autenticación
   async login(email: string, password: string) {
     return this.client.post('/auth/login', { email, password });
+  }
+
+  async refresh(refreshToken: string) {
+    return this.client.post('/auth/refresh', { refreshToken });
   }
 
   async getAuthMe() {
@@ -232,8 +273,8 @@ class APIClient {
     return this.client.post('/auth/otp/request', { email });
   }
 
-  async verifyOtp(email: string, code: string) {
-    return this.client.post('/auth/otp/verify', { email, code, studentsOnly: false });
+  async verifyOtp(email: string, code: string, studentId?: string, studentsOnly?: boolean) {
+    return this.client.post('/auth/otp/verify', { email, code, studentId, studentsOnly: studentsOnly ?? false });
   }
 
   async getSchools() {
@@ -302,7 +343,7 @@ class APIClient {
 
   // IA (Vertex)
   async aiRewriteModerate(text: string, subject?: string, tone?: string) {
-    return this.client.post('/ai/rewrite-moderate', { text, subject, tone });
+    return this.client.post('/ai/rewrite-moderate', { text, subject, tone }, { timeout: 60000 });
   }
 
   async getAiPolicy() {

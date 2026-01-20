@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import clsx from 'clsx';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Modal } from '@/components/ui';
 import { apiClient } from '@/lib/api-client';
@@ -114,6 +115,9 @@ export default function NewMessagePage() {
   const userPageSize = 12;
   const [studentPage, setStudentPage] = useState(1);
   const studentPageSize = 10;
+  const [showAllRecipients, setShowAllRecipients] = useState(false);
+  const [showStepsMobile, setShowStepsMobile] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   useEffect(() => {
     if (!canCreate) return;
@@ -241,19 +245,25 @@ export default function NewMessagePage() {
       setSendError('Escribe el contenido del mensaje.');
       return;
     }
+
     const userEmails = users
       .filter((u) => selectedUserIds.includes(u.id))
       .map((u) => u.email)
-      .filter((e): e is string => Boolean(e));
+      .filter((email): email is string => Boolean(email));
     const studentEmails = selectedStudentIds
       .map((id) => studentCache[id]?.email)
-      .filter((e): e is string => Boolean(e));
+      .filter((email): email is string => Boolean(email));
     const guardianEmails = selectedStudentIds
       .flatMap((id) => (studentCache[id]?.guardians || []).map((g) => g.email))
-      .filter((e): e is string => Boolean(e));
+      .filter((email): email is string => Boolean(email));
     const emails: string[] = Array.from(new Set<string>([...userEmails, ...studentEmails, ...guardianEmails]));
+
     if (!emails.length) {
-      setSendError('Selecciona al menos un usuario con correo.');
+      if (selectedGroups.length > 0) {
+        setSendError('No se encontraron correos en los grupos seleccionados. Verifica que tengan usuarios o alumnos con correo/apoderados.');
+      } else {
+        setSendError('Selecciona al menos un usuario con correo.');
+      }
       return;
     }
     if (!channels.length) {
@@ -288,6 +298,7 @@ export default function NewMessagePage() {
           cid: 'inline-image-1',
         });
       }
+
       for (const file of extraFiles) {
         if (file.size > MAX_ATTACHMENT_BYTES) {
           setSendError(`El archivo ${file.name} supera los 10MB permitidos.`);
@@ -306,84 +317,81 @@ export default function NewMessagePage() {
       return;
     }
 
-    // Reemplazo básico de placeholders
     const primaryRecipient =
-      selectedUserIds.length === 1
-        ? users.find((u) => u.id === selectedUserIds[0])
-        : null;
+      selectedUserIds.length === 1 ? users.find((u) => u.id === selectedUserIds[0]) : null;
     const now = new Date().toLocaleDateString();
-    const replaceTokens = (text: string) => {
-      const base = text ?? '';
-      return base
-        .split('{{nombre}}').join(primaryRecipient?.name ?? '')
-        .split('{{curso}}').join('')
-        .split('{{fecha}}').join(now)
-        .split('{{remitente}}').join(currentUser?.name ?? '');
-    };
-  const finalContent = replaceTokens(messageContent);
-  const finalReason = replaceTokens(reason);
+    const replaceTokens = (text: string) =>
+      (text ?? '')
+        .split('{{nombre}}')
+        .join(primaryRecipient?.name ?? '')
+        .split('{{curso}}')
+        .join('')
+        .split('{{fecha}}')
+        .join(now)
+        .split('{{remitente}}')
+        .join(currentUser?.name ?? '');
 
-  setSendLoading(true);
-  setModerationLoading(true);
-  setSendError('');
-  setSendSuccess('');
-  setModerationInfo('');
-  const scheduleIso =
-    sendMode === 'schedule' && scheduleAt
-      ? new Date(scheduleAt).toISOString()
-      : undefined;
+    const finalContent = replaceTokens(messageContent);
+    const finalReason = replaceTokens(reason);
+
+    setSendLoading(true);
+    setModerationLoading(true);
+    setSendError('');
+    setSendSuccess('');
+    setModerationInfo('');
+
+    const scheduleIso =
+      sendMode === 'schedule' && scheduleAt ? new Date(scheduleAt).toISOString() : undefined;
 
     try {
       const review = await apiClient.aiRewriteModerate(finalContent, finalReason, 'profesional');
       let allowed = review?.data?.allowed ?? true;
       let reasons: string[] = review?.data?.reasons || [];
+
       const normalize = (txt: string) =>
-      txt
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-    const textAgg = normalize(`${finalContent} ${finalReason}`);
-    const sensitiveKeywords = [
-      'odio',
-      'racism',
-      'xenofob',
-      'senofob',
-      'discriminac',
-      'violencia',
-      'acoso',
-      'amenaza',
-      'insulto',
-      'suicidio',
-      'matar',
-      'golpear',
-      'imbecil',
-      'imbecil',
-      'idiota',
-      'estupido',
-      'tonto',
-      'negro ', // con espacio para evitar colores neutrales; seguimos normalizado
-      'maldito',
-    ];
-    const keywordHit = sensitiveKeywords.find((kw) => textAgg.includes(kw));
-    if (keywordHit) {
-      allowed = false;
-      reasons = [...reasons, `Posible lenguaje sensible detectado: ${keywordHit}`];
-    }
-    if (!allowed) {
-      const reasonText = reasons.join(' | ') || 'Contenido sensible según políticas';
-      setSendError(`IA bloqueó el envío: ${reasonText}`);
-      setModerationInfo(`⚠️ IA: ${reasonText}`);
-      setSendLoading(false);
-      setModerationLoading(false);
-      setAiBlocked(true);
-      return;
-    }
-    setAiBlocked(false);
-    if (reasons.length) {
-      setModerationInfo(`Revisión IA: ${reasons.join(' | ')}`);
-    } else {
-      setModerationInfo('Revisión IA: sin hallazgos críticos.');
-    }
+        txt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const textAgg = normalize(`${finalContent} ${finalReason}`);
+      const sensitiveKeywords = [
+        'odio',
+        'racism',
+        'xenofob',
+        'senofob',
+        'discriminac',
+        'violencia',
+        'acoso',
+        'amenaza',
+        'insulto',
+        'suicidio',
+        'matar',
+        'golpear',
+        'imbecil',
+        'imbecil',
+        'idiota',
+        'estupido',
+        'tonto',
+        'negro ',
+        'maldito',
+      ];
+      const keywordHit = sensitiveKeywords.find((kw) => textAgg.includes(kw));
+      if (keywordHit) {
+        allowed = false;
+        reasons = [...reasons, `Posible lenguaje sensible detectado: ${keywordHit}`];
+      }
+
+      if (!allowed) {
+        const reasonText = reasons.join(' | ') || 'Contenido sensible según políticas';
+        setSendError(`IA bloqueó el envío: ${reasonText}`);
+        setModerationInfo(`⚠️ IA: ${reasonText}`);
+        setSendLoading(false);
+        setModerationLoading(false);
+        setAiBlocked(true);
+        return;
+      }
+
+      setAiBlocked(false);
+      setModerationInfo(
+        reasons.length ? `Revisión IA: ${reasons.join(' | ')}` : 'Revisión IA: sin hallazgos críticos.'
+      );
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -397,11 +405,11 @@ export default function NewMessagePage() {
       return;
     }
 
-  apiClient
-    .sendMessage({
-      content: finalContent,
-      recipients: emails,
-      channels,
+    apiClient
+      .sendMessage({
+        content: finalContent,
+        recipients: emails,
+        channels,
         scheduleAt: scheduleIso,
         year,
         groupIds: selectedGroups,
@@ -411,7 +419,9 @@ export default function NewMessagePage() {
       .then((res) => {
         const status = res?.data?.status || res?.data?.messageStatus || '';
         if (status && status.toLowerCase() === 'failed') {
-          setSendError('El backend no pudo entregar el mensaje (estado FAILED). Revisa logs o configuración de correo.');
+          setSendError(
+            'El backend no pudo entregar el mensaje (estado FAILED). Revisa logs o configuración de correo.'
+          );
           return;
         }
         setSendSuccess(sendMode === 'now' ? 'Mensaje enviado.' : 'Mensaje programado.');
@@ -427,6 +437,10 @@ export default function NewMessagePage() {
         setAttachedFile(null);
         setExtraFiles([]);
         setReason('');
+        setShowSuccessToast(true);
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
       })
       .catch((err: any) => {
         const msg =
@@ -439,12 +453,11 @@ export default function NewMessagePage() {
       .finally(() => {
         setSendLoading(false);
         setModerationLoading(false);
-        // Si hubo un timeout o error y quedó aiBlocked activo por error, lo liberamos aquí
         if (sendError?.toLowerCase().includes('timeout')) {
           setAiBlocked(false);
         }
       });
-};
+  };
 
   const nextStep = () => {
     if (step === 1) {
@@ -590,12 +603,20 @@ export default function NewMessagePage() {
       return;
     }
     const memberIds = group.memberIds || [];
-    const allSelected = memberIds.length > 0 && memberIds.every((m) => selectedUserIds.includes(m));
+    const studentMembers = memberIds.filter((m) => studentCache[m] || students.find((s) => s.id === m));
+    const userMembers = memberIds.filter((m) => !studentMembers.includes(m));
+
+    const allSelected =
+      (memberIds.length === 0 ? false : memberIds.every((m) => selectedUserIds.includes(m) || selectedStudentIds.includes(m))) &&
+      selectedGroups.includes(id);
+
     if (allSelected) {
-      setSelectedUserIds((prev) => prev.filter((id) => !memberIds.includes(id)));
+      setSelectedUserIds((prev) => prev.filter((uid) => !userMembers.includes(uid)));
+      setSelectedStudentIds((prev) => prev.filter((sid) => !studentMembers.includes(sid)));
       setSelectedGroups((prev) => prev.filter((r) => r !== id));
     } else {
-      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...memberIds])));
+      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...userMembers])));
+      setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...studentMembers])));
       setSelectedGroups((prev) => (prev.includes(id) ? prev : [...prev, id]));
     }
   };
@@ -606,6 +627,29 @@ export default function NewMessagePage() {
 
   const toggleStudent = (id: string) => {
     setSelectedStudentIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
+  };
+
+  const guardianEmailsOf = (s?: StudentRecipient) =>
+    (s?.guardians || [])
+      .map((g) => (g.email || '').trim())
+      .filter((e) => e.length > 0);
+
+  const primaryEmailOfStudent = (s?: StudentRecipient) => {
+    if (!s) return '';
+    const selfEmail = (s.email || '').trim();
+    if (selfEmail) return selfEmail;
+    const gEmails = guardianEmailsOf(s);
+    return gEmails[0] || '';
+  };
+
+  const emailLabelOfStudent = (s?: StudentRecipient) => {
+    if (!s) return 'Sin correo';
+    const selfEmail = (s.email || '').trim();
+    const gEmails = guardianEmailsOf(s);
+    if (selfEmail) return selfEmail;
+    if (gEmails.length === 0) return 'Sin correo';
+    if (gEmails.length === 1) return gEmails[0];
+    return `${gEmails[0]} (+${gEmails.length - 1})`;
   };
 
   const filteredUsers = useMemo(() => {
@@ -641,6 +685,18 @@ export default function NewMessagePage() {
     return () => clearTimeout(handle);
   }, [studentSearch]);
 
+  useEffect(() => {
+    if (!showSuccessToast) return;
+    const t = setTimeout(() => setShowSuccessToast(false), 5000);
+    return () => clearTimeout(t);
+  }, [showSuccessToast]);
+
+  useEffect(() => {
+    if (!sendSuccess) return;
+    const t = setTimeout(() => setSendSuccess(''), 5000);
+    return () => clearTimeout(t);
+  }, [sendSuccess]);
+
   const userTotalPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
   const paginatedUsers = useMemo(() => {
     const start = (userPage - 1) * userPageSize;
@@ -663,28 +719,31 @@ export default function NewMessagePage() {
     [selectedStudentIds, studentCache]
   );
 
+  // En UI solo mostramos una ficha por estudiante y por usuario; los correos de apoderados se usan para enviar pero no duplican fichas.
   const allSelectedRecipients = useMemo(
     () => [
       ...selectedRecipients.map((u) => ({ id: `user-${u.id}`, label: u.name || u.email, email: u.email, type: 'Usuario' })),
       ...selectedStudentRecipients.map((s) => ({
         id: `student-${s.id}`,
         label: `${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim() || s.email || 'Estudiante',
-        email: s.email,
-        type: 'Estudiante',
+        email: emailLabelOfStudent(s),
+        type: 'Estudiante (se envía a apoderados)',
       })),
-      ...selectedStudentRecipients.flatMap((s) =>
-        (s.guardians || [])
-          .filter((g) => g.email)
-          .map((g, idx) => ({
-            id: `guardian-${s.id}-${g.email || idx}`,
-            label: `${g.name || 'Apoderado'} (${s.firstName || 'Alumno'})`,
-            email: g.email,
-            type: 'Apoderado',
-          }))
-      ),
     ],
     [selectedRecipients, selectedStudentRecipients]
   );
+
+  const [recipientSearch, setRecipientSearch] = useState('');
+  const filteredSelectedRecipients = useMemo(() => {
+    if (!recipientSearch.trim()) return allSelectedRecipients;
+    const term = recipientSearch.toLowerCase();
+    return allSelectedRecipients.filter(
+      (r) =>
+        (r.label && r.label.toLowerCase().includes(term)) ||
+        (r.email && r.email.toLowerCase().includes(term)) ||
+        (r.type && r.type.toLowerCase().includes(term))
+    );
+  }, [recipientSearch, allSelectedRecipients]);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -750,30 +809,10 @@ export default function NewMessagePage() {
     }
   };
 
-  const toggleSelectFiltered = () => {
-    const ids = paginatedUsers.map((u) => u.id);
-    const allSelected = ids.every((id) => selectedUserIds.includes(id));
-    if (allSelected) {
-      setSelectedUserIds((prev) => prev.filter((id) => !ids.includes(id)));
-    } else {
-      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...ids])));
-    }
-  };
-
-  const toggleSelectStudents = () => {
-    const ids = paginatedStudents.map((s) => s.id);
-    const allSelected = ids.every((id) => selectedStudentIds.includes(id));
-    if (allSelected) {
-      setSelectedStudentIds((prev) => prev.filter((id) => !ids.includes(id)));
-    } else {
-      setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...ids])));
-    }
-  };
-
   if (!canCreate) {
     return (
       <ProtectedLayout>
-        <div className="max-w-3xl mx-auto bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+        <div className="max-w-3xl mx-auto glass-panel rounded-2xl p-6 soft-shadow">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
           <p className="text-gray-600">
             No tienes permisos para crear mensajes. Si crees que es un error, contacta al
@@ -800,7 +839,25 @@ export default function NewMessagePage() {
 
   return (
     <ProtectedLayout>
-      <div className="relative max-w-4xl mx-auto space-y-6 px-4 sm:px-6">
+      {showSuccessToast && (
+        <div className="fixed top-16 right-4 z-40">
+          <div className="bg-green-600 text-white shadow-xl rounded-xl px-4 py-3 flex items-center gap-3">
+            <span className="text-lg">✅</span>
+            <div>
+              <p className="font-semibold leading-tight">Mensaje enviado</p>
+              <p className="text-xs text-green-50 leading-tight">Listo. Puedes redactar otro mensaje.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSuccessToast(false)}
+              className="ml-2 text-green-50 hover:text-white text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="relative max-w-5xl lg:max-w-6xl mx-auto space-y-6 px-4 sm:px-6">
         {aiLoading && (
           <div className="absolute inset-0 z-30 bg-white/75 backdrop-blur-sm flex flex-col items-center justify-center">
             <div className="bg-white/90 border border-gray-200 shadow-xl rounded-2xl px-6 py-5 flex flex-col items-center gap-3 max-w-sm text-center">
@@ -837,7 +894,7 @@ export default function NewMessagePage() {
             </div>
           </div>
         )}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass-panel rounded-2xl p-4 soft-shadow">
           <div>
             <p className="text-sm text-gray-500">Redactar</p>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
@@ -853,38 +910,119 @@ export default function NewMessagePage() {
           </Link>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 sm:p-8 space-y-6">
-          {/* Stepper */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs sm:text-sm font-medium text-gray-600">
-              <span className={step >= 1 ? 'text-primary' : ''}>1. Plantilla</span>
-              <span className={step >= 2 ? 'text-primary' : ''}>2. Mensaje</span>
-              <span className={step >= 3 ? 'text-primary' : ''}>3. Destinatarios</span>
-              <span className={step >= 4 ? 'text-primary' : ''}>4. Canales/Programación</span>
-              <span className={step >= 5 ? 'text-primary' : ''}>5. Resumen</span>
+        <div className="grid lg:grid-cols-12 gap-4">
+          {/* Timeline lateral */}
+          <aside className="lg:col-span-3 space-y-3">
+            <div className="lg:hidden glass-panel rounded-2xl p-3 soft-shadow">
+              <button
+                type="button"
+                onClick={() => setShowStepsMobile((v) => !v)}
+                className="w-full flex items-center justify-between text-sm font-semibold text-gray-800"
+              >
+                Pasos del envío
+                <span className="text-xs text-primary">{showStepsMobile ? 'Ocultar' : 'Ver'}</span>
+              </button>
+              {showStepsMobile && (
+                <div className="mt-3 space-y-2">
+                  {[
+                    { label: 'Plantilla', step: 1 },
+                    { label: 'Mensaje', step: 2 },
+                    { label: 'Destinatarios', step: 3 },
+                    { label: 'Canales/Programación', step: 4 },
+                    { label: 'Resumen', step: 5 },
+                  ].map((item, idx) => (
+                    <button
+                      key={item.step}
+                      type="button"
+                      onClick={() => setStep(item.step)}
+                      className={clsx(
+                        'w-full flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-all',
+                        step === item.step
+                          ? 'border-primary bg-primary/10 text-secondary'
+                          : 'border-gray-200 hover:border-primary/40'
+                      )}
+                    >
+                      <span className="font-semibold text-sm">{item.label}</span>
+                      <span className="text-[11px] text-gray-500">Paso {idx + 1} / 5</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${(step / 5) * 100}%` }}
-              />
+            <div className="hidden lg:block glass-panel rounded-2xl p-4 soft-shadow">
+              <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Pasos</p>
+              <div className="space-y-3">
+                {[
+                  { label: 'Plantilla', step: 1 },
+                  { label: 'Mensaje', step: 2 },
+                  { label: 'Destinatarios', step: 3 },
+                  { label: 'Canales/Programación', step: 4 },
+                  { label: 'Resumen', step: 5 },
+                ].map((item, idx) => {
+                  const active = step === item.step;
+                  const done = step > item.step;
+                  return (
+                    <button
+                      key={item.step}
+                      type="button"
+                      onClick={() => setStep(item.step)}
+                      className={clsx(
+                        'w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all',
+                        active
+                          ? 'border-primary bg-primary/10 text-secondary shadow-sm'
+                          : done
+                            ? 'border-green-200 bg-green-50 text-secondary'
+                            : 'border-gray-200 hover:border-primary/40'
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          'h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold',
+                          active
+                            ? 'bg-primary text-secondary'
+                            : done
+                              ? 'bg-green-500 text-white'
+                              : 'bg-gray-100 text-gray-600'
+                        )}
+                      >
+                        {item.step}
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">{item.label}</p>
+                        <p className="text-[11px] text-gray-500">Paso {idx + 1} de 5</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+            <div className="glass-panel rounded-2xl p-4 soft-shadow space-y-2">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Progreso</p>
+              <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${(step / 5) * 100}%` }}
+                />
+              </div>
+            </div>
+          </aside>
 
-          {(sendError || sendSuccess) && (
-            <div className="mb-4 space-y-2">
-              {sendError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-                  {sendError}
-                </div>
-              )}
-              {sendSuccess && (
-                <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
-                  {sendSuccess}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Contenido del paso */}
+          <div className="lg:col-span-9 glass-panel rounded-2xl soft-shadow p-5 sm:p-8 space-y-6">
+            {(sendError || sendSuccess) && (
+              <div className="space-y-2">
+                {sendError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                    {sendError}
+                  </div>
+                )}
+                {sendSuccess && (
+                  <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
+                    {sendSuccess}
+                  </div>
+                )}
+              </div>
+            )}
           <form className="space-y-6" onSubmit={handleSubmit}>
             {/* 1. Plantillas */}
             {step === 1 && (
@@ -933,7 +1071,7 @@ export default function NewMessagePage() {
 
             {/* 2. Mensaje */}
             {step === 2 && (
-            <div className="space-y-4 border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="space-y-4 glass-panel rounded-2xl p-5 soft-shadow">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-gray-900">2. Mensaje</h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
@@ -1091,7 +1229,7 @@ export default function NewMessagePage() {
 
             {/* 3. Destinatarios */}
             {step === 3 && (
-            <div className="space-y-3 border border-gray-200 rounded-lg p-4">
+            <div className="space-y-3 glass-panel rounded-2xl p-4 soft-shadow">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-gray-900">3. Destinatarios</h2>
                 {(selectedUserIds.length > 0 || selectedStudentIds.length > 0 || selectedGroups.length > 0) && (
@@ -1102,7 +1240,7 @@ export default function NewMessagePage() {
               </div>
 
               <div className="space-y-4">
-                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                <div className="glass-panel rounded-xl p-4 soft-shadow space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-wide text-gray-500">Grupos</p>
@@ -1157,7 +1295,7 @@ export default function NewMessagePage() {
                   )}
                 </div>
 
-                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                <div className="glass-panel rounded-xl p-4 soft-shadow space-y-3">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div className="w-full">
                       <p className="text-xs uppercase tracking-wide text-gray-500">Estudiantes</p>
@@ -1169,16 +1307,6 @@ export default function NewMessagePage() {
                           placeholder="Buscar por nombre, curso o email"
                           className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
                         />
-                        <button
-                          type="button"
-                          onClick={toggleSelectStudents}
-                          className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 font-semibold hover:border-primary hover:text-primary transition-colors shadow-sm"
-                        >
-                          {paginatedStudents.length &&
-                          paginatedStudents.every((u) => selectedStudentIds.includes(u.id))
-                            ? 'Deseleccionar visibles'
-                            : 'Seleccionar visibles'}
-                        </button>
                       </div>
                     </div>
                     <div className="text-xs text-gray-500 flex flex-col items-start sm:items-end">
@@ -1207,16 +1335,16 @@ export default function NewMessagePage() {
                               checked={selectedStudentIds.includes(s.id)}
                               onChange={() => toggleStudent(s.id)}
                             />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900 truncate">
-                                {`${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim() || 'Sin nombre'}
-                              </p>
-                              <p className="text-xs text-gray-500 truncate">
-                                {s.email || 'Sin correo'} {s.course ? `• ${s.course}` : ''} {s.year ? `• ${s.year}` : ''}
-                              </p>
-                            </div>
-                          </label>
-                        ))}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">
+                              {`${s.firstName || ''} ${s.lastNameFather || ''} ${s.lastNameMother || ''}`.trim() || 'Sin nombre'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {emailLabelOfStudent(s)} {s.course ? `• ${s.course}` : ''} {s.year ? `• ${s.year}` : ''}
+                            </p>
+                          </div>
+                        </label>
+                      ))}
                         {!students.length && (
                           <p className="text-sm text-gray-500 col-span-2">No hay estudiantes disponibles.</p>
                         )}
@@ -1247,7 +1375,7 @@ export default function NewMessagePage() {
                   )}
                 </div>
 
-                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                <div className="glass-panel rounded-xl p-4 soft-shadow space-y-3">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div className="w-full">
                       <p className="text-xs uppercase tracking-wide text-gray-500">Usuarios</p>
@@ -1259,16 +1387,6 @@ export default function NewMessagePage() {
                           placeholder="Buscar por nombre o email"
                           className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
                         />
-                        <button
-                          type="button"
-                          onClick={toggleSelectFiltered}
-                          className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 font-semibold hover:border-primary hover:text-primary transition-colors shadow-sm"
-                        >
-                          {paginatedUsers.length &&
-                          paginatedUsers.every((u) => selectedUserIds.includes(u.id))
-                            ? 'Deseleccionar visibles'
-                            : 'Seleccionar visibles'}
-                        </button>
                       </div>
                     </div>
                     <div className="text-xs text-gray-500 flex flex-col items-start sm:items-end">
@@ -1333,26 +1451,55 @@ export default function NewMessagePage() {
                   )}
                 </div>
 
-                <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+                <div className="glass-panel rounded-xl p-3 soft-shadow space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold text-gray-900 text-sm">
-                      Destinatarios seleccionados ({allSelectedRecipients.length + selectedGroups.length})
-                    </p>
-                    {!!(allSelectedRecipients.length + selectedGroups.length) && (
-                      <button
-                        type="button"
-                        className="text-xs text-red-600 hover:text-red-700"
-                        onClick={() => {
-                          setSelectedUserIds([]);
-                          setSelectedStudentIds([]);
-                          setSelectedGroups([]);
-                        }}
-                      >
-                        Limpiar selección
-                      </button>
-                    )}
+                    <div className="space-y-0.5">
+                      <p className="font-semibold text-gray-900 text-sm">
+                        Destinatarios seleccionados ({allSelectedRecipients.length + selectedGroups.length})
+                      </p>
+                      {!!(allSelectedRecipients.length + selectedGroups.length) && (
+                        <p className="text-xs text-gray-500">
+                          Grupos: {selectedGroupRecipients.length} • Personas: {allSelectedRecipients.length}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      {allSelectedRecipients.length + selectedGroups.length > 0 && (
+                        <input
+                          type="search"
+                          value={recipientSearch}
+                          onChange={(e) => setRecipientSearch(e.target.value)}
+                          placeholder="Buscar y quitar destinatario"
+                          className="px-2.5 py-1 rounded-lg border border-gray-300 text-xs w-48"
+                        />
+                      )}
+                      {!!(allSelectedRecipients.length + selectedGroups.length) && (
+                        <>
+                          <button
+                            type="button"
+                            className="text-primary hover:text-primary-dark"
+                            onClick={() => setShowAllRecipients((v) => !v)}
+                          >
+                            {showAllRecipients ? 'Colapsar' : 'Ver todos'}
+                          </button>
+                          <button
+                            type="button"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => {
+                              setSelectedUserIds([]);
+                              setSelectedStudentIds([]);
+                              setSelectedGroups([]);
+                              setShowAllRecipients(false);
+                              setRecipientSearch('');
+                            }}
+                          >
+                            Limpiar
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                     {selectedGroupRecipients.map((g) => (
                       <span
                         key={`group-${g.id}`}
@@ -1370,34 +1517,54 @@ export default function NewMessagePage() {
                         </button>
                       </span>
                     ))}
-                    {allSelectedRecipients.map((rec) => (
-                      <span
-                        key={rec.id}
-                        className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-100"
-                      >
-                        <span className="font-semibold truncate">{rec.label}</span>
-                        {rec.email && <span className="text-blue-500 truncate">{rec.email}</span>}
-                        <span className="text-[10px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">{rec.type}</span>
-                        <button
-                          type="button"
-                          className="text-blue-500 hover:text-blue-700"
-                          onClick={() => {
-                            if (rec.id.startsWith('user-')) {
-                              const id = rec.id.replace('user-', '');
-                              toggleUser(id);
-                            } else {
-                              const id = rec.id.replace('student-', '');
-                              toggleStudent(id);
-                            }
-                          }}
-                          aria-label="Eliminar destinatario"
+                    {(recipientSearch.trim()
+                      ? filteredSelectedRecipients
+                      : showAllRecipients
+                        ? allSelectedRecipients
+                        : allSelectedRecipients.slice(0, 60)
+                    ).map((rec) => {
+                      const shortEmail =
+                        rec.email && rec.email.length > 24 ? rec.email.slice(0, 21) + '…' : rec.email || 'Sin correo';
+                      return (
+                        <span
+                          key={rec.id}
+                          className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-gray-200 bg-white text-xs shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
                         >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
+                          <span className="font-semibold truncate max-w-[120px] sm:max-w-[150px]">{rec.label}</span>
+                          <span className="text-gray-500 truncate max-w-[140px]">{shortEmail}</span>
+                          <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100">
+                            {rec.type}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-gray-400 hover:text-red-600 text-[11px]"
+                            onClick={() => {
+                              if (rec.id.startsWith('user-')) {
+                                const id = rec.id.replace('user-', '');
+                                toggleUser(id);
+                              } else {
+                                const id = rec.id.replace('student-', '');
+                                toggleStudent(id);
+                              }
+                            }}
+                            aria-label="Eliminar destinatario"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })}
                     {!allSelectedRecipients.length && !selectedGroupRecipients.length && (
                       <span className="text-xs text-gray-500">Aún no seleccionas destinatarios.</span>
+                    )}
+                    {allSelectedRecipients.length > 60 && !showAllRecipients && (
+                      <button
+                        type="button"
+                        className="text-xs text-primary underline"
+                        onClick={() => setShowAllRecipients(true)}
+                      >
+                        Ver los {allSelectedRecipients.length} destinatarios
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1407,7 +1574,7 @@ export default function NewMessagePage() {
 
             {/* 4. Canales y programación */}
             {step === 4 && (
-            <div className="space-y-4 border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="space-y-4 glass-panel rounded-2xl p-4 soft-shadow">
               <h2 className="text-lg font-semibold text-gray-900">4. Canales y programación</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className={`flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer transition ${channels.includes('email') ? 'border-primary bg-green-50' : 'border-gray-200 hover:border-primary'}`}>
@@ -1500,55 +1667,80 @@ export default function NewMessagePage() {
 
             {/* 5. Resumen */}
             {step === 5 && (
-              <div className="space-y-3 border border-gray-200 rounded-lg p-4 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900">5. Resumen</h2>
-                <div className="space-y-2 text-sm text-gray-700">
-                  <div>
-                    <p className="font-semibold text-gray-900">Motivo</p>
-                    <p className="text-gray-700">{reason || '—'}</p>
+              <div className="space-y-3 glass-panel rounded-2xl p-4 soft-shadow">
+                <h2 className="text-lg font-semibold text-secondary">5. Resumen</h2>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="glass-panel rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Motivo</p>
+                      <p className="text-base font-semibold text-secondary">{reason || '—'}</p>
+                    </div>
+                    <div className="glass-panel rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Canales</p>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {channels.map((c) => (
+                          <span key={c} className="pill bg-primary/20 border border-primary/30 text-secondary">
+                            {c === 'email' ? 'Email' : 'Notiflow App'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="glass-panel rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Programación</p>
+                      <p className="text-sm text-gray-800 font-semibold">
+                        {sendMode === 'now' ? 'Enviar ahora' : scheduleAt ? `Programado para ${scheduleAt}` : '—'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Contenido</p>
-                    <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+
+                  <div className="glass-panel rounded-xl p-4 space-y-2">
+                    <p className="text-sm font-semibold text-secondary">Contenido</p>
+                    <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
                       {renderRich(messageContent) || '—'}
                     </div>
                   </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">
-                      Destinatarios ({allSelectedRecipients.length + selectedGroupRecipients.length})
-                    </p>
+
+                  <div className="glass-panel rounded-xl p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-secondary">
+                        Destinatarios ({allSelectedRecipients.length + selectedGroupRecipients.length})
+                      </p>
+                      <span className="pill bg-primary/15 border border-primary/30 text-secondary">
+                        Grupos: {selectedGroupRecipients.length}
+                      </span>
+                      <span className="pill bg-blue-50 border border-blue-100 text-blue-700">
+                        Personas: {allSelectedRecipients.length}
+                      </span>
+                    </div>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {selectedGroupRecipients.map((g) => (
-                        <span key={`summary-group-${g.id}`} className="px-2 py-1 rounded-full bg-primary/10 text-primary text-xs">
-                          {g.name || g.id} (grupo)
+                        <span key={`summary-group-${g.id}`} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
+                          {g.name || g.id} • Grupo
                         </span>
                       ))}
-                      {allSelectedRecipients.map((rec) => (
-                        <span key={rec.id} className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs">
-                          {rec.email || rec.label}
-                        </span>
-                      ))}
+                      {allSelectedRecipients.map((rec) => {
+                        const isStudent = rec.id.startsWith('student-');
+                        const text = isStudent
+                          ? `${rec.label || 'Estudiante'} • apoderado: ${rec.email || 'Sin correo'}`
+                          : rec.email || rec.label;
+                        return (
+                          <span
+                            key={rec.id}
+                            className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100 max-w-full truncate"
+                            title={text}
+                          >
+                            {text}
+                          </span>
+                        );
+                      })}
                       {!allSelectedRecipients.length && !selectedGroupRecipients.length && (
-                        <span className="text-gray-500 text-xs">—</span>
+                        <span className="text-gray-500 text-xs">Sin destinatarios</span>
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="text-xs font-semibold text-gray-900">Canales:</span>
-                    {channels.map((c) => (
-                      <span key={c} className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs">
-                        {c === 'email' ? 'Email' : 'Notiflow App'}
-                      </span>
-                    ))}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Programación</p>
-                    <p className="text-gray-700">
-                      {sendMode === 'now' ? 'Enviar ahora' : scheduleAt ? `Programado para ${scheduleAt}` : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Adjuntos</p>
+
+                  <div className="glass-panel rounded-xl p-4 space-y-2">
+                    <p className="text-sm font-semibold text-secondary">Adjuntos</p>
                     <ul className="list-disc list-inside text-gray-700 space-y-1">
                       {attachedFile ? (
                         <li>Imagen inline: {attachedFile.name} ({Math.round(attachedFile.size / 1024)} KB)</li>
@@ -1615,7 +1807,8 @@ export default function NewMessagePage() {
           </form>
         </div>
       </div>
-
+      </div>
+      {/* Modals */}
       <Modal
         isOpen={showTemplatesModal}
         title="Seleccionar plantilla"

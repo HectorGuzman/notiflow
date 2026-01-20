@@ -7,6 +7,7 @@ import com.notiflow.service.AccessControlService;
 import com.notiflow.service.MessageService;
 import com.notiflow.util.CurrentUser;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,10 +21,16 @@ public class MessageController {
 
     private final MessageService messageService;
     private final AccessControlService accessControlService;
+    private final String cronSecret;
 
-    public MessageController(MessageService messageService, AccessControlService accessControlService) {
+    public MessageController(
+            MessageService messageService,
+            AccessControlService accessControlService,
+            @Value("${app.cron.secret:}") String cronSecret
+    ) {
         this.messageService = messageService;
         this.accessControlService = accessControlService;
+        this.cronSecret = cronSecret;
     }
 
     @GetMapping
@@ -38,18 +45,19 @@ public class MessageController {
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
         // Permite mensajes.list o mensajes.list.self (filtrando por remitente)
         String senderFilter = null;
+        String recipientFilter = null;
         try {
             accessControlService.check(user, "messages.list", user.schoolId(), Optional.empty());
         } catch (org.springframework.web.server.ResponseStatusException ex) {
             // si no tiene list, intentar self
             accessControlService.check(user, "messages.list", user.schoolId(), Optional.ofNullable(user.email()));
-            senderFilter = user.email();
+            recipientFilter = user.email();
         }
         if (self) {
-            senderFilter = user.email();
+            recipientFilter = user.email();
         }
         boolean isGlobal = user.isGlobalAdmin() || user.isSuperAdmin();
-        return ResponseEntity.ok(messageService.list(user.schoolId(), isGlobal, year, senderFilter, query, page, pageSize));
+        return ResponseEntity.ok(messageService.list(user.schoolId(), isGlobal, year, senderFilter, recipientFilter, query, page, pageSize));
     }
 
     @PostMapping
@@ -123,13 +131,48 @@ public class MessageController {
     }
 
     @PostMapping("/process-scheduled")
-    public ResponseEntity<java.util.Map<String, Integer>> processScheduled() {
-        CurrentUser user = CurrentUser.fromContext()
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        if (!user.isSuperAdmin() && !user.isGlobalAdmin()) {
-            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "Solo superadmin");
+    public ResponseEntity<java.util.Map<String, Integer>> processScheduled(
+            @RequestHeader(value = "X-Cron-Secret", required = false) String headerSecret,
+            @RequestParam(value = "cronKey", required = false) String paramSecret
+    ) {
+        boolean cronAllowed = cronSecret != null && !cronSecret.isBlank()
+                && ((headerSecret != null && headerSecret.equals(cronSecret)) || (paramSecret != null && paramSecret.equals(cronSecret)));
+
+        CurrentUser user = CurrentUser.fromContext().orElse(null);
+
+        if (!cronAllowed) {
+            if (user == null) {
+                throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED);
+            }
+            if (!user.isSuperAdmin() && !user.isGlobalAdmin()) {
+                throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "Solo superadmin");
+            }
         }
         int processed = messageService.processScheduled();
         return ResponseEntity.ok(java.util.Map.of("processed", processed));
+    }
+
+    // Tracking de apertura de correo: píxel 1x1, sin auth
+    @GetMapping(value = "/{id}/track", produces = org.springframework.http.MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> trackEmail(
+            @PathVariable("id") String messageId,
+            @RequestParam("recipient") String recipient
+    ) {
+        messageService.markEmailOpened(messageId, recipient);
+        // Píxel transparente 1x1
+        byte[] pixel = new byte[]{
+                (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, (byte) 0xC4, (byte) 0x89,
+                0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54,
+                0x78, (byte) 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+                0x0D, 0x0A, 0x2D, (byte) 0xB4, 0x00, 0x00, 0x00, 0x00,
+                0x49, 0x45, 0x4E, 0x44, (byte) 0xAE, 0x42, 0x60, (byte) 0x82
+        };
+        return ResponseEntity
+                .ok()
+                .cacheControl(org.springframework.http.CacheControl.noCache())
+                .body(pixel);
     }
 }

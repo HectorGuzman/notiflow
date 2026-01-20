@@ -27,10 +27,10 @@ export const Select: React.FC<SelectProps> = ({
         multiple={multiple}
         disabled={disabled}
         className={clsx(
-          'w-full px-4 py-2.5 border rounded-lg font-medium transition-colors',
-          'focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent',
-          error ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white hover:border-gray-300',
-          disabled && 'bg-gray-100 cursor-not-allowed opacity-60'
+          'w-full px-4 py-2.5 border rounded-xl font-medium transition-all backdrop-blur-sm',
+          'focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent shadow-sm hover:shadow',
+          error ? 'border-red-500 bg-red-50' : 'border-white/70 bg-white/80 hover:border-primary/30',
+          disabled && 'bg-gray-100 cursor-not-allowed opacity-60 shadow-none'
         )}
       >
         {placeholder && <option value="">{placeholder}</option>}

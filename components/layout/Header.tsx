@@ -28,6 +28,20 @@ export const Header: React.FC = () => {
   const [schoolLogo, setSchoolLogo] = React.useState<string | null>(null);
   const role = (user?.role || '').toUpperCase();
   const isTeacherOrViewer = role === 'TEACHER' || role === 'GUARDIAN' || role === 'STUDENT';
+  const roleLabel = (r?: string) => {
+    const key = (r || '').toLowerCase();
+    const map: Record<string, string> = {
+      superadmin: 'Superadmin',
+      global_admin: 'Superadmin',
+      admin: 'Administrador',
+      teacher: 'Profesor',
+      coordinator: 'Coordinador',
+      gestion_escolar: 'Gestión Escolar',
+      guardian: 'Apoderado',
+      student: 'Estudiante',
+    };
+    return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '');
+  };
 
   const canCreateMessage = hasPermission('messages.create');
   const canListMessages = hasPermission('messages.list');
@@ -100,22 +114,22 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+    <header className="sticky top-0 z-40 bg-transparent">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex justify-between items-center h-16 glass-panel rounded-2xl mt-3 px-3 sm:px-4 shadow-sm">
           {/* Logo */}
           <div className="flex items-center gap-3">
             {schoolLogo ? (
-              <div className="w-10 h-10 rounded-lg overflow-hidden border">
+              <div className="w-11 h-11 rounded-xl overflow-hidden border border-white/60 shadow">
                 <img src={schoolLogo} alt="Logo colegio" className="w-full h-full object-cover" />
               </div>
             ) : (
-              <div className="w-10 h-10 rounded-lg overflow-hidden border border-primary/30 bg-white">
+              <div className="w-11 h-11 rounded-xl overflow-hidden border border-primary/30 bg-white shadow">
                 <Image src={squareLogo} alt="Notiflow" className="w-full h-full object-cover" priority />
               </div>
             )}
             <div className="hidden sm:block">
-              <h1 className="text-xl font-bold text-gray-900">Notiflow</h1>
+              <h1 className="text-xl font-bold text-secondary">Notiflow</h1>
               <p className="text-xs text-gray-500">Mensajería Escolar</p>
             </div>
           </div>
@@ -125,8 +139,8 @@ export const Header: React.FC = () => {
             {user && (
               <>
                 <div className="text-right">
-                  <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{user.role}</p>
+                  <p className="text-sm font-semibold text-secondary">{user.name}</p>
+                  <p className="text-xs text-gray-500 capitalize">{roleLabel(user.role)}</p>
                   <p className="text-xs text-gray-500">
                     {user.schoolName || `Colegio ${user.schoolId}`}
                   </p>
@@ -144,7 +158,7 @@ export const Header: React.FC = () => {
 
           {/* Mobile Menu Toggle */}
           <button
-            className="sm:hidden"
+            className="sm:hidden text-secondary"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? (
@@ -157,12 +171,12 @@ export const Header: React.FC = () => {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="sm:hidden pb-4 border-t border-gray-200 pt-4 space-y-4">
+          <div className="sm:hidden pb-4 border-t border-gray-200 pt-4 space-y-4 glass-panel rounded-xl mt-2">
             {user && (
               <>
                 <div className="mb-4 text-sm">
                   <p className="font-medium text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{user.role}</p>
+                  <p className="text-xs text-gray-500 capitalize">{roleLabel(user.role)}</p>
                   <p className="text-xs text-gray-500">
                     {user.schoolName || `Colegio ${user.schoolId}`}
                   </p>

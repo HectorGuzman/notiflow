@@ -138,13 +138,10 @@ export const useMessageStore = create<MessageState>((set) => ({
 }));
 
 export const useYearStore = create<YearState>((set) => ({
-  year:
-    (typeof window !== 'undefined' && localStorage.getItem('notiflow.year')) ||
-    new Date().getFullYear().toString(),
-  setYear: (year: string) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('notiflow.year', year);
-    }
-    set({ year });
+  // For dashboards/reports we only surface the current calendar year to avoid stale selections.
+  year: new Date().getFullYear().toString(),
+  setYear: () => {
+    // Ignore external changes; always stick to the current year.
+    set({ year: new Date().getFullYear().toString() });
   },
 }));

@@ -27,6 +27,14 @@ public class MessageDocument {
     private List<String> appReadBy;
     // estado por destinatario para la app (PENDING/READ)
     private Map<String, MessageStatus> appStatuses;
+    // estado por destinatario para email (PENDING/SENT/FAILED)
+    private Map<String, MessageStatus> emailStatuses;
+    // nombre por destinatario (correo -> nombre)
+    private Map<String, String> recipientNames;
+    // listado de destinatarios con nombre y correo
+    private java.util.List<com.notiflow.dto.RecipientDetail> recipientsDetails;
+    // indicador de mensaje masivo a toda la comunidad
+    private Boolean broadcast;
 
     public MessageDocument() {
     }
@@ -197,5 +205,37 @@ public class MessageDocument {
 
     public void setAppStatuses(Map<String, MessageStatus> appStatuses) {
         this.appStatuses = appStatuses;
+    }
+
+    public Map<String, String> getRecipientNames() {
+        return recipientNames;
+    }
+
+    public void setRecipientNames(Map<String, String> recipientNames) {
+        this.recipientNames = recipientNames;
+    }
+
+    public Map<String, MessageStatus> getEmailStatuses() {
+        return emailStatuses;
+    }
+
+    public void setEmailStatuses(Map<String, MessageStatus> emailStatuses) {
+        this.emailStatuses = emailStatuses;
+    }
+
+    public java.util.List<com.notiflow.dto.RecipientDetail> getRecipientsDetails() {
+        return recipientsDetails;
+    }
+
+    public void setRecipientsDetails(java.util.List<com.notiflow.dto.RecipientDetail> recipientsDetails) {
+        this.recipientsDetails = recipientsDetails;
+    }
+
+    public Boolean getBroadcast() {
+        return broadcast;
+    }
+
+    public void setBroadcast(Boolean broadcast) {
+        this.broadcast = broadcast;
     }
 }

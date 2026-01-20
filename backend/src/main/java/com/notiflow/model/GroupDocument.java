@@ -12,6 +12,8 @@ public class GroupDocument {
     private String schoolId;
     private String year;
     private Instant createdAt;
+    private Boolean system;
+    private String systemType;
 
     public GroupDocument() {}
 
@@ -79,5 +81,21 @@ public class GroupDocument {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Boolean getSystem() {
+        return system;
+    }
+
+    public void setSystem(Boolean system) {
+        this.system = system;
+    }
+
+    public String getSystemType() {
+        return systemType;
+    }
+
+    public void setSystemType(String systemType) {
+        this.systemType = systemType;
     }
 }

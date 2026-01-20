@@ -141,20 +141,27 @@ public class VertexAiService {
             }
         } catch (Exception e) {
             log.warn("No se pudo parsear JSON de rewrite, usando fallback. raw={}", raw);
-            String fallback = raw == null ? "" : raw;
-            java.util.regex.Matcher mBody = java.util.regex.Pattern
-                    .compile("\"body\"\\s*:\\s*\"(.*?)\"", java.util.regex.Pattern.DOTALL)
-                    .matcher(fallback);
-            if (mBody.find()) {
-                bodySuggestion = mBody.group(1).replace("\\n", "\n");
+            String fallback = raw == null ? "" : raw.trim();
+            // Si el modelo devolvió texto plano, lo usamos como cuerpo
+            if (!fallback.startsWith("{")) {
+                bodySuggestion = fallback.isEmpty() ? text : fallback;
+                allowed = true;
+                reasons = List.of();
             } else {
-                bodySuggestion = text;
-            }
-            java.util.regex.Matcher mSubj = java.util.regex.Pattern
-                    .compile("\"subject\"\\s*:\\s*\"(.*?)\"", java.util.regex.Pattern.DOTALL)
-                    .matcher(fallback);
-            if (mSubj.find()) {
-                subjectSuggestion = mSubj.group(1);
+                java.util.regex.Matcher mBody = java.util.regex.Pattern
+                        .compile("\"body\"\\s*:\\s*\"(.*?)\"", java.util.regex.Pattern.DOTALL)
+                        .matcher(fallback);
+                if (mBody.find()) {
+                    bodySuggestion = mBody.group(1).replace("\\n", "\n");
+                } else {
+                    bodySuggestion = text;
+                }
+                java.util.regex.Matcher mSubj = java.util.regex.Pattern
+                        .compile("\"subject\"\\s*:\\s*\"(.*?)\"", java.util.regex.Pattern.DOTALL)
+                        .matcher(fallback);
+                if (mSubj.find()) {
+                    subjectSuggestion = mSubj.group(1);
+                }
             }
         }
 

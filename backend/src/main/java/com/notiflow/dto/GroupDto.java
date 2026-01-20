@@ -10,6 +10,8 @@ public record GroupDto(
         List<String> memberIds,
         String schoolId,
         String year,
-        Instant createdAt
+        Instant createdAt,
+        Boolean system,
+        String systemType
 ) {
 }

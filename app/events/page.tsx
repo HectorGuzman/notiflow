@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Card, Button, Input, TextArea, Select, Modal } from '@/components/ui';
 import { apiClient } from '@/lib/api-client';
-import { useAuthStore } from '@/store';
+import { useAuthStore, useYearStore } from '@/store';
 import { EventItem, EventType } from '@/types';
 import {
   FiCalendar,
@@ -34,6 +34,8 @@ export default function EventsPage() {
     role === 'SUPERADMIN' || role === 'ADMIN' || role === 'TEACHER' || hasPermission('events.create');
   const today = useMemo(() => new Date(), []);
   const currentYear = today.getFullYear();
+  const { year: selectedYear } = useYearStore();
+  const effectiveYear = selectedYear || String(currentYear);
 
   const [monthCursor, setMonthCursor] = useState(() => {
     const now = new Date();
@@ -137,8 +139,13 @@ export default function EventsPage() {
     try {
       const [usersRes, groupsRes, studentsRes] = await Promise.allSettled([
         apiClient.getUsers(),
-        apiClient.getGroups(),
-        apiClient.getStudents({ page: 1, pageSize: 500, schoolId: user?.schoolId || undefined }),
+        apiClient.getGroups(undefined, effectiveYear),
+        apiClient.getStudents({
+          page: 1,
+          pageSize: 500,
+          schoolId: user?.schoolId || undefined,
+          year: effectiveYear,
+        }),
       ]);
       if (usersRes.status === 'fulfilled') {
         const u = usersRes.value.data || [];
@@ -167,14 +174,15 @@ export default function EventsPage() {
   useEffect(() => {
     loadEvents();
     loadRecipients();
-  }, []);
+  }, [effectiveYear]);
 
   const filteredEvents = useMemo(() => {
     const term = search.toLowerCase();
+    const targetYear = parseInt(effectiveYear || `${currentYear}`, 10);
     const eventsThisYear = events.filter((ev) => {
       const d = new Date(ev.startDateTime || ev.createdAt || '');
       if (Number.isNaN(d.getTime())) return false;
-      return d.getFullYear() === currentYear;
+      return d.getFullYear() === targetYear;
     });
     return eventsThisYear
       .filter((ev) => {
@@ -416,10 +424,10 @@ export default function EventsPage() {
   return (
     <ProtectedLayout>
       <div className="flex flex-col gap-6">
-        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <header className="glass-panel rounded-2xl p-4 sm:p-5 soft-shadow flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <p className="text-sm text-gray-500">Agenda escolar</p>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-3xl font-bold text-secondary flex items-center gap-2">
               <FiCalendar />
               Eventos y horarios
             </h1>
@@ -428,7 +436,7 @@ export default function EventsPage() {
             </p>
           </div>
           {canCreate && (
-            <Button onClick={() => setShowModal(true)}>
+            <Button onClick={() => setShowModal(true)} size="md">
               <FiPlus />
               Nuevo evento
             </Button>
@@ -436,22 +444,22 @@ export default function EventsPage() {
         </header>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Card className="p-4 shadow-sm">
+          <Card className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Eventos del año</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+            <p className="text-2xl font-bold text-secondary">{stats.total}</p>
           </Card>
-          <Card className="p-4 shadow-sm">
+          <Card className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Próximos 14 días</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.upcoming}</p>
+            <p className="text-2xl font-bold text-secondary">{stats.upcoming}</p>
           </Card>
-          <Card className="p-4 shadow-sm">
+          <Card className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Hoy</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.today}</p>
+            <p className="text-2xl font-bold text-secondary">{stats.today}</p>
           </Card>
         </div>
 
         {/* Calendario compacto */}
-        <Card className="p-4 shadow-sm">
+        <Card className="p-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
             <button
               type="button"
@@ -524,10 +532,10 @@ export default function EventsPage() {
                     setShowModal(true);
                   }}
                   className={clsx(
-                    'h-16 rounded-lg border text-sm flex flex-col items-center justify-center gap-1 transition-colors',
-                    isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 hover:bg-gray-50'
-                  )}
-                >
+                'h-16 rounded-xl border text-sm flex flex-col items-center justify-center gap-1 transition-all',
+                isSelected ? 'border-primary bg-primary/10 shadow-sm' : 'border-gray-200 hover:bg-gray-50'
+              )}
+            >
                   <span className="font-semibold text-gray-800">{d.getDate()}</span>
                   {dayEvents.length > 0 && (
                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
@@ -548,7 +556,7 @@ export default function EventsPage() {
           )}
         </Card>
 
-        <Card className="p-5 flex flex-col gap-4 shadow-sm">
+        <Card className="p-5 flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <p className="text-sm text-gray-500">Agenda rápida</p>
@@ -571,7 +579,7 @@ export default function EventsPage() {
               return (
                 <div
                   key={ev.id}
-                  className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 rounded-lg p-3 hover:border-primary/50 transition-colors"
+                  className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-transparent glass-panel rounded-xl p-3 hover:translate-y-[-2px] transition-all"
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">

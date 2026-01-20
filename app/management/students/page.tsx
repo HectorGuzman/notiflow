@@ -55,7 +55,6 @@ export default function StudentsPage() {
     lastNameFather: '',
     lastNameMother: '',
     course: '',
-    year: year || '',
     run: '',
     gender: '',
     email: '',
@@ -132,7 +131,6 @@ export default function StudentsPage() {
       lastNameFather: '',
       lastNameMother: '',
       course: '',
-      year: yearFilter || year || '',
       run: '',
       gender: '',
       email: '',
@@ -151,9 +149,9 @@ export default function StudentsPage() {
     setFormError('');
     setSuccess('');
     try {
+      const { year: _ignoredYear, ...rest } = studentForm as any;
       const payload = {
-        ...studentForm,
-        year: studentForm.year || yearFilter || year || undefined,
+        ...rest,
         schoolId: isGlobalAdmin ? studentForm.schoolId || undefined : user?.schoolId,
       };
       if (editingId) {
@@ -189,7 +187,6 @@ export default function StudentsPage() {
       lastNameFather: s.lastNameFather || '',
       lastNameMother: s.lastNameMother || '',
       course: s.course || '',
-      year: s.year || yearFilter || year || '',
       run: s.run || '',
       gender: s.gender || '',
       email: s.email || '',
@@ -201,10 +198,19 @@ export default function StudentsPage() {
     });
   };
 
+  const formatRut = (value: string) => {
+    const cleaned = (value || '').replace(/[^0-9kK]/g, '').toUpperCase();
+    if (cleaned.length <= 1) return cleaned;
+    const body = cleaned.slice(0, -1);
+    const dv = cleaned.slice(-1);
+    const withDots = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${withDots}-${dv}`;
+  };
+
   if (!canManageStudents) {
     return (
       <ProtectedLayout>
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div className="glass-panel rounded-2xl p-6 soft-shadow">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Sin permisos</h1>
           <p className="text-gray-600">
             No tienes permisos para gestionar estudiantes y apoderados.
@@ -228,7 +234,7 @@ export default function StudentsPage() {
           </Link>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 space-y-4">
+        <div className="glass-panel rounded-2xl soft-shadow p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Listado</h2>
@@ -294,10 +300,20 @@ export default function StudentsPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <FiMail className="text-gray-400" />
-                          <span className="truncate">{s.email || 'Sin correo'}</span>
-                        </div>
+                        {(() => {
+                          const emails = [
+                            s.email,
+                            ...(s.guardians || []).map((g) => g.email).filter(Boolean),
+                          ].filter(Boolean);
+                          return (
+                            <div className="flex items-center gap-2">
+                              <FiMail className="text-gray-400" />
+                              <span className="truncate">
+                                {emails.length ? emails.join(', ') : 'Sin correo'}
+                              </span>
+                            </div>
+                          );
+                        })()}
                         {s.phone ? (
                           <div className="flex items-center gap-2 text-sm">
                             <FiPhone className="text-gray-400" />
@@ -425,21 +441,11 @@ export default function StudentsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Año</label>
-            <input
-              type="text"
-              value={studentForm.year}
-              onChange={(e) => setStudentForm((prev) => ({ ...prev, year: e.target.value }))}
-              placeholder="Ej: 2025"
-              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
-            />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">RUN</label>
             <input
               type="text"
               value={studentForm.run}
-              onChange={(e) => setStudentForm((prev) => ({ ...prev, run: e.target.value }))}
+              onChange={(e) => setStudentForm((prev) => ({ ...prev, run: formatRut(e.target.value) }))}
               placeholder="11.111.111-1"
               className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent border-gray-200"
             />

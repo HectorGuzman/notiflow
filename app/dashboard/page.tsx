@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import clsx from 'clsx';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
@@ -141,7 +142,7 @@ export default function DashboardPage() {
           title: 'Enviar Nuevo Mensaje',
           description: 'Crea y envía un mensaje a estudiantes, cursos o niveles',
           href: '/messages/new',
-          color: 'bg-primary',
+          color: 'from-primary to-primary-dark',
           icon: FiSend,
         }
       : null,
@@ -150,7 +151,7 @@ export default function DashboardPage() {
           title: 'Mis Mensajes',
           description: 'Revisa el historial de mensajes enviados',
           href: '/messages',
-          color: 'bg-blue-600',
+          color: 'from-blue-500 to-blue-600',
           icon: FiBookOpen,
         }
       : null,
@@ -159,10 +160,17 @@ export default function DashboardPage() {
           title: 'Reportes',
           description: 'Revisa métricas y desempeño',
           href: '/reports',
-          color: 'bg-purple-600',
+          color: 'from-secondary to-secondary/90',
           icon: FiBarChart,
         }
       : null,
+    {
+      title: 'Eventos',
+      description: 'Crea o revisa eventos y evaluaciones',
+      href: '/events',
+      color: 'from-emerald-500 to-emerald-600',
+      icon: FiBarChart,
+    },
   ].filter(Boolean) as { title: string; description: string; href: string; color: string; icon: any }[];
 
   return (
@@ -200,33 +208,30 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-gray-900">Acciones Rápidas</h2>
+          </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {quickActions.map((action, idx) => (
             <Link
-              href="/messages"
-              className="text-primary hover:text-green-800 transition-colors text-sm"
+              key={idx}
+              href={action.href}
+              className={clsx(
+                'rounded-2xl p-6 bg-gradient-to-r text-white hover:translate-y-[-3px] transition transform soft-shadow group',
+                action.color
+              )}
             >
-              Ver historial
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {quickActions.map((action, idx) => (
-              <Link
-                key={idx}
-                href={action.href}
-                className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow group"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className={`${action.color} p-3 rounded-lg text-white flex items-center justify-center`}>
-                    <action.icon size={20} />
-                  </div>
-                  <div className="text-gray-400 group-hover:text-primary transition-colors">→</div>
+              <div className="flex items-start justify-between mb-4">
+                <div className="p-3 rounded-lg text-white flex items-center justify-center shadow-inner bg-white/20">
+                  <action.icon size={20} />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {action.title}
-                </h3>
-                <p className="text-gray-600 text-sm">{action.description}</p>
-              </Link>
-            ))}
-          </div>
+                <div className="text-white/70 group-hover:text-white transition-colors text-lg">→</div>
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-2">
+                {action.title}
+              </h3>
+              <p className="text-white/80 text-sm">{action.description}</p>
+            </Link>
+          ))}
+        </div>
         </div>
 
         {isSuperAdmin && (
@@ -237,9 +242,9 @@ export default function DashboardPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {schoolBreakdown.map((s) => (
-                <div key={s.id} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                <div key={s.id} className="glass-panel rounded-2xl p-5 soft-shadow">
                   <p className="text-sm text-gray-500 mb-1">{s.id}</p>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">{s.name}</h3>
+                  <h3 className="text-lg font-semibold text-secondary mb-3">{s.name}</h3>
                   <div className="space-y-2 text-sm text-gray-700">
                     <div className="flex justify-between">
                       <span>Usuarios</span>
@@ -261,7 +266,7 @@ export default function DashboardPage() {
                 </div>
               ))}
               {schoolBreakdown.length === 0 && (
-                <div className="bg-white border border-dashed border-gray-300 rounded-lg p-5 text-sm text-gray-500">
+                <div className="glass-panel rounded-2xl p-5 text-sm text-gray-500 text-center">
                   No hay datos de colegios aún.
                 </div>
               )}

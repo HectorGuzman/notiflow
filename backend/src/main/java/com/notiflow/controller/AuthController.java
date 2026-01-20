@@ -8,10 +8,13 @@ import com.notiflow.dto.UserDto;
 import com.notiflow.model.UserRole;
 import com.notiflow.dto.OtpRequest;
 import com.notiflow.dto.OtpVerifyRequest;
+import com.notiflow.dto.RefreshRequest;
 import com.notiflow.service.OtpService;
 import com.notiflow.service.UsageService;
 import com.notiflow.service.AuthService;
 import com.notiflow.service.JwtService;
+import com.notiflow.service.RefreshJwtService;
+import com.notiflow.service.RefreshTokenStore;
 import com.notiflow.service.PasswordResetService;
 import com.notiflow.service.MultiStudentMatchException;
 import io.jsonwebtoken.Claims;
@@ -31,13 +34,17 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtService jwtService;
+    private final RefreshJwtService refreshJwtService;
+    private final RefreshTokenStore refreshTokenStore;
     private final PasswordResetService passwordResetService;
     private final OtpService otpService;
     private final UsageService usageService;
 
-    public AuthController(AuthService authService, JwtService jwtService, PasswordResetService passwordResetService, OtpService otpService, UsageService usageService) {
+    public AuthController(AuthService authService, JwtService jwtService, RefreshJwtService refreshJwtService, RefreshTokenStore refreshTokenStore, PasswordResetService passwordResetService, OtpService otpService, UsageService usageService) {
         this.authService = authService;
         this.jwtService = jwtService;
+        this.refreshJwtService = refreshJwtService;
+        this.refreshTokenStore = refreshTokenStore;
         this.passwordResetService = passwordResetService;
         this.otpService = otpService;
         this.usageService = usageService;
@@ -46,6 +53,42 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(@RequestBody RefreshRequest request) {
+        if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
+        try {
+            Claims claims = refreshJwtService.parseClaims(request.refreshToken());
+            String jti = claims.get("jti", String.class);
+            if (jti == null || !refreshTokenStore.isValid(jti)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
+            }
+            UserDto user = new UserDto(
+                    claims.getSubject(),
+                    claims.get("name", String.class),
+                    claims.getSubject(),
+                    UserRole.valueOf(claims.get("role", String.class)),
+                    claims.get("schoolId", String.class),
+                    claims.get("schoolName", String.class),
+                    claims.get("rut", String.class)
+            );
+            Map<String, Object> map = new HashMap<>(claims);
+            String access = jwtService.generateToken(map, user.email());
+            String refresh = refreshJwtService.generateToken(map, user.email());
+            try { refreshTokenStore.revoke(jti); } catch (Exception ignored) {}
+            try {
+                String newJti = (String) map.get("jti");
+                java.time.Instant exp = java.time.Instant.now().plusSeconds(refreshJwtService.getExpirationSeconds());
+                refreshTokenStore.save(newJti, user.email(), exp);
+            } catch (Exception ignored) {}
+            return ResponseEntity.ok(new AuthResponse(access, refresh, user, java.util.List.of()));
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(null);
+        }
     }
 
     @GetMapping("/me")

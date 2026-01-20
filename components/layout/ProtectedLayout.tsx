@@ -45,8 +45,10 @@ export const ProtectedLayout = ({ children }: Props) => {
 
   if (checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
-        <div className="text-sm font-medium">Validando sesión...</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-white to-secondary/5 text-secondary">
+        <div className="glass-panel px-6 py-4 rounded-2xl text-sm font-semibold shadow-lg">
+          Validando sesión...
+        </div>
       </div>
     );
   }

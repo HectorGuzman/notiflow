@@ -21,7 +21,9 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://hectorguzman.github.io,https://hectorguzman.github.io/notiflow}
   jwt:
     secret: ${JWT_SECRET:change-me-in-prod}
-    expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+    expiration-seconds: ${JWT_EXPIRATION_SECONDS:43200}
+    refresh-secret: ${JWT_REFRESH_SECRET:change-me-refresh-in-prod}
+    refresh-expiration-seconds: ${JWT_REFRESH_EXPIRATION_SECONDS:604800}
   admin:
     email: ${APP_ADMIN_EMAIL:}
     password: ${APP_ADMIN_PASSWORD:}

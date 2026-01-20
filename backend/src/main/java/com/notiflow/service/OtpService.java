@@ -26,7 +26,7 @@ public class OtpService {
     }
 
     public void requestCode(String email) {
-        String normalized = email.toLowerCase();
+        String normalized = email == null ? "" : email.trim().toLowerCase();
         String code = String.format("%06d", random.nextInt(1_000_000));
         Instant expires = Instant.now().plusSeconds(TTL_MINUTES * 60L);
         try {
@@ -61,7 +61,7 @@ public class OtpService {
     }
 
     public boolean verifyCode(String email, String code) {
-        String normalized = email.toLowerCase();
+        String normalized = email == null ? "" : email.trim().toLowerCase();
         try {
             ApiFuture<QuerySnapshot> query = firestore.collection("loginCodes")
                     .whereEqualTo("email", normalized)

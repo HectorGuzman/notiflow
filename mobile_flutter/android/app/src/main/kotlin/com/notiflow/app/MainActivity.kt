@@ -1,4 +1,4 @@
-package com.example.notiflow_flutter
+package com.notiflow.app
 
 import io.flutter.embedding.android.FlutterActivity
 
