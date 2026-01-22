@@ -35,6 +35,9 @@ mobile_flutter/.flutter-plugins-dependencies
 mobile_flutter/ios/Pods
 mobile_flutter/ios/.symlinks
 mobile_flutter/ios/Flutter/ephemeral
+mobile_flutter/ios/Runner.xcworkspace/xcuserdata
+mobile_flutter/ios/build
+mobile_flutter/ios/DerivedData
 mobile_flutter/macos/Flutter/ephemeral
 mobile_flutter/windows/runner/Generated*
 mobile_flutter/linux/flutter/ephemeral
@@ -47,3 +50,5 @@ mobile_flutter/notifications_flutter.iml
 mobile_flutter/notiflow_flutter.iml
 mobile_flutter/.gradle-local
 mobile_flutter/android/.kotlin
+*.xcarchive
+*.ipa
