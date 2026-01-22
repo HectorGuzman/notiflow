@@ -1,16 +1,38 @@
-# notiflow_flutter
+# Notiflow Mobile (Flutter)
 
-A new Flutter project.
+Cliente móvil de Notiflow (iOS/Android) construido con Flutter. Incluye login y mensajería alineada con el frontend web.
 
-## Getting Started
+## Requisitos
+- Flutter 3.5+ (Dart SDK incluido)
+- Xcode (para iOS) y CocoaPods (`pod install`)
+- Android SDK + emulador o dispositivo físico
 
-This project is a starting point for a Flutter application.
+## Setup rápido
+```bash
+cd mobile_flutter
+flutter pub get
+# iOS: instala pods si es la primera vez
+cd ios && pod install && cd ..
+```
 
-A few resources to get you started if this is your first Flutter project:
+## Ejecutar en desarrollo
+```bash
+# Lista dispositivos disponibles
+flutter devices
+# Ejecuta en un simulador o dispositivo
+flutter run -d <device_id_or_name>
+```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Builds de release
+```bash
+# iOS (sin firmar, usa Xcode para firmar/IPA)
+flutter build ios --release --no-codesign
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+# Android APK
+flutter build apk --release
+```
+
+## Configuración clave
+- Bundle identifier iOS: `cl.notiflow.app` (ver Runner.xcodeproj).
+- Versionado: `pubspec.yaml` (`version: x.y.z+build`) se propaga a iOS/Android.
+- Firebase: reemplaza `ios/Runner/GoogleService-Info.plist` y `android/app/google-services.json` con los de tu proyecto si usas otros entornos.

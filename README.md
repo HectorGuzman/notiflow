@@ -60,6 +60,10 @@ notiflow/
 └── next.config.js              # Configuración Next.js (optimizada para GitHub Pages)
 ```
 
+### Aplicaciones Incluidas
+- **Web (Next.js)**: carpeta raíz (`app/`, `components/`, etc.). Scripts en `package.json`.
+- **Móvil (Flutter)**: `mobile_flutter/` con clientes iOS/Android. Ver `mobile_flutter/README.md` para ejecución y builds.
+
 ---
 
 ## 🛠️ Stack Tecnológico
@@ -89,6 +93,7 @@ notiflow/
 - Node.js 18+
 - npm o yarn
 - Git
+- Flutter 3.5+ (opcional, para cliente móvil)
 
 ### Pasos de Instalación
 
@@ -128,6 +133,18 @@ npm run start
 npm run deploy
 # Esto ejecuta: npm run export && gh-pages -d out
 ```
+
+### Cliente Móvil (Flutter)
+
+```bash
+cd mobile_flutter
+flutter pub get
+# iOS (primera vez): cd ios && pod install && cd ..
+flutter run -d <device_id>                   # Ejecución local
+flutter build ios --release --no-codesign   # Build iOS (firmar/IPA en Xcode)
+flutter build apk --release                 # Build Android
+```
+Más detalle en `mobile_flutter/README.md`.
 
 ---
 

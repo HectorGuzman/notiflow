@@ -203,6 +203,16 @@ npm run deploy
 # - GitHub Actions deplotará automáticamente
 ```
 
+### Cliente móvil (Flutter)
+```bash
+cd mobile_flutter
+flutter pub get
+# iOS (primera vez): cd ios && pod install && cd ..
+flutter run -d <device_id>                   # Ejecutar en simulador/dispositivo
+flutter build ios --release --no-codesign   # Build iOS (firmar en Xcode para IPA)
+flutter build apk --release                 # Build Android
+```
+
 ---
 
 ## 🐛 Debugging
