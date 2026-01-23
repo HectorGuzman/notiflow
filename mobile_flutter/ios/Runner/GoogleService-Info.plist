@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.notiflow.app</string>
+	<string>cl.notiflow.app</string>
 	<key>PROJECT_ID</key>
 	<string>notiflow-480919-11ee8</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:763299778868:ios:9ac6494cdfbaeb4306d561</string>
+	<string>1:763299778868:ios:cba584da986935d106d561</string>
 </dict>
 </plist>

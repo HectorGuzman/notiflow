@@ -57,6 +57,31 @@ Future<void> _initLocalNotifications() async {
       ?.requestPermissions(alert: true, badge: true, sound: true);
 }
 
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await _initLocalNotifications();
+  _showRemoteMessage(message);
+}
+
+void _showRemoteMessage(RemoteMessage message) {
+  final notification = message.notification;
+  if (notification == null) return;
+  final title = notification.title ?? 'Notiflow';
+  final body = notification.body ?? '';
+  const details = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'notiflow_remote',
+      'Notificaciones',
+      channelDescription: 'Alertas enviadas desde Notiflow',
+      importance: Importance.max,
+      priority: Priority.high,
+      ticker: 'notiflow',
+    ),
+    iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+  );
+  localNotifications.show(notification.hashCode, title, body, details, payload: message.data['route']);
+}
+
 class StudentOption {
   final String id;
   final String name;
@@ -75,7 +100,9 @@ class StudentOption {
   }
 }
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   runApp(const NotiflowApp());
 }
 
@@ -173,8 +200,10 @@ class _SplashScreenState extends State<SplashScreen> {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     await _initLocalNotifications();
     await _initPush();
+    _listenForegroundMessages();
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('authToken');
     final refresh = prefs.getString('refreshToken');
@@ -213,6 +242,13 @@ class _SplashScreenState extends State<SplashScreen> {
     final messaging = FirebaseMessaging.instance;
     await messaging.requestPermission();
     await messaging.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
+  }
+
+  void _listenForegroundMessages() {
+    FirebaseMessaging.onMessage.listen(_showRemoteMessage);
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      // Si en el futuro quieres navegar con payload, usa message.data['route'].
+    });
   }
 
   @override
@@ -1592,6 +1628,22 @@ class _MessagesPageState extends State<MessagesPage> {
   String? _error;
   int _unreadCount = 0;
 
+  Future<Set<String>> _loadLocalReadIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'readMessages_${widget.email}';
+    return (prefs.getStringList(key) ?? []).toSet();
+  }
+
+  Future<void> _persistReadId(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'readMessages_${widget.email}';
+    final list = prefs.getStringList(key) ?? [];
+    if (!list.contains(id)) {
+      list.add(id);
+      await prefs.setStringList(key, list);
+    }
+  }
+
   String _formatDateFriendly(String? iso) {
     if (iso == null || iso.isEmpty) return '';
     final dt = DateTime.tryParse(iso);
@@ -1641,9 +1693,19 @@ class _MessagesPageState extends State<MessagesPage> {
       );
       if (res.statusCode == 200) {
         final data = _extractList(jsonDecode(res.body));
+        final localRead = await _loadLocalReadIds();
         if (!mounted) return;
         setState(() {
-          _messages = data;
+          _messages = data.map((m) {
+            if (m is! Map) return m;
+            final id = m['id'];
+            if (id == null) return m;
+            final readBy = (m['appReadBy'] as List?)?.toList() ?? [];
+            if (localRead.contains(id) && !readBy.contains(widget.email)) {
+              readBy.add(widget.email);
+            }
+            return {...m, 'appReadBy': readBy};
+          }).toList();
           _loaded = _messages.length > _pageSize ? _pageSize : _messages.length;
           _unreadCount = _messages.whereType<Map>().where((m) {
             final List<dynamic> readBy = (m['appReadBy'] as List?) ?? [];
@@ -1747,6 +1809,7 @@ class _MessagesPageState extends State<MessagesPage> {
                                   ],
                                 ),
                               ),
+                              const SizedBox(height: 12),
                             ],
                           ],
                         );
@@ -1953,6 +2016,7 @@ class _MessagesPageState extends State<MessagesPage> {
           'Content-Type': 'application/json',
         },
       ).timeout(kTimeout);
+      await _persistReadId(id);
       if (!mounted) return;
       setState(() {
         final List<dynamic> updated = List.of(_messages);
